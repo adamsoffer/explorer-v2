@@ -26,6 +26,7 @@ import { formatLPT, formatPercent, formatRelativeTime } from "@/lib/format";
 import { useElectorate, useOrchestrators } from "@/lib/hooks/queries";
 import type { CastVote, Electorate, VoteChoice } from "@/lib/subgraph/votes";
 
+import { useUrlParam } from "./detail";
 import type { TallySeries } from "./tally";
 
 const PAGE = 25;
@@ -436,12 +437,23 @@ export function VotesPanel({
   electorate: Electorate | undefined;
 }) {
   const nowMs = useNow(60_000);
-  const [list, setList] = useState<List>("voted");
+  const [list, setList] = useUrlParam<List>(
+    "list",
+    ["voted", "not-voted"],
+    "voted"
+  );
   const [limit, setLimit] = useState(PAGE);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "weight", dir: "desc" });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [choice, setChoice] = useState<VoteChoice | null>(null);
+  // `?vote=no`; "" (no filter) stays out of the URL.
+  const [vote, setVote] = useUrlParam<VoteChoice | "">(
+    "vote",
+    ["", ...series.map((s) => s.key as VoteChoice)],
+    ""
+  );
+  const choice = vote || null;
+  const setChoice = (c: VoteChoice | null) => setVote(c ?? "");
 
   const all = useMemo(() => votes ?? [], [votes]);
   const active = useMemo(() => electorate?.orchestrators ?? [], [electorate]);
@@ -541,6 +553,8 @@ export function VotesPanel({
   const isOpen = (id: string, selfMatches: boolean) =>
     expanded.has(id) || (filtering && !selfMatches);
   const switchTo = (l: List) => {
+    // The choice filter only applies to the Voted list.
+    if (l === "not-voted") setChoice(null);
     setList(l);
     setLimit(PAGE);
   };

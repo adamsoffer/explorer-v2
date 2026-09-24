@@ -157,47 +157,65 @@ export function DetailSkeleton() {
   );
 }
 
-/* ── Tabs (?tab=votes) ───────────────────────────────────────────────────── */
+/* ── URL state (?tab=votes&list=not-voted&vote=no) ────────────────────── */
 
-const TAB_EVENT = "detail-tab:changed";
+const URL_EVENT = "detail-url:changed";
 
-function subscribeTab(onChange: () => void) {
+function subscribeUrl(onChange: () => void) {
   window.addEventListener("popstate", onChange);
-  window.addEventListener(TAB_EVENT, onChange);
+  window.addEventListener(URL_EVENT, onChange);
   return () => {
     window.removeEventListener("popstate", onChange);
-    window.removeEventListener(TAB_EVENT, onChange);
+    window.removeEventListener(URL_EVENT, onChange);
   };
 }
 
 /**
- * The detail page's tab, kept in `?tab=` so a votes view can be linked.
- * Reads the URL directly so the page doesn't need a Suspense boundary.
+ * One query parameter as state, so a view can be linked. The fallback value
+ * is left out of the URL; `clears` names parameters that only make sense
+ * alongside this one and are dropped when it returns to its fallback.
+ * Updates replace the history entry, and it reads the URL directly so the
+ * page doesn't need a Suspense boundary.
  */
-export function useDetailTab<T extends string>(
+export function useUrlParam<T extends string>(
+  key: string,
   values: readonly T[],
-  fallback: T
+  fallback: T,
+  clears: readonly string[] = []
 ) {
-  const tab = useSyncExternalStore(
-    subscribeTab,
+  const value = useSyncExternalStore(
+    subscribeUrl,
     () => {
-      const v = new URLSearchParams(window.location.search).get("tab");
+      const v = new URLSearchParams(window.location.search).get(key);
       return values.includes(v as T) ? (v as T) : fallback;
     },
     () => fallback
   );
-  const setTab = useCallback(
+  const clearKeys = clears.join(",");
+  const set = useCallback(
     (next: T) => {
       const url = new URL(window.location.href);
-      if (next === fallback) url.searchParams.delete("tab");
-      else url.searchParams.set("tab", next);
+      if (next === fallback) {
+        url.searchParams.delete(key);
+        for (const k of clearKeys.split(",")) if (k) url.searchParams.delete(k);
+      } else url.searchParams.set(key, next);
       window.history.replaceState(window.history.state, "", url);
-      window.dispatchEvent(new Event(TAB_EVENT));
+      window.dispatchEvent(new Event(URL_EVENT));
     },
-    [fallback]
+    [key, fallback, clearKeys]
   );
-  return [tab, setTab] as const;
+  return [value, set] as const;
 }
+
+/** The detail page's tab (`?tab=`); leaving the votes tab drops its state. */
+export function useDetailTab<T extends string>(
+  values: readonly T[],
+  fallback: T
+) {
+  return useUrlParam("tab", values, fallback, VOTES_PARAMS);
+}
+
+const VOTES_PARAMS = ["list", "vote"] as const;
 
 export function DetailTabs<T extends string>({
   value,
