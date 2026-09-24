@@ -4,17 +4,18 @@ import { useQueries } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
-  ChevronDown,
+  ChevronRight,
   ExternalLink,
   Search,
   Users,
   Vote,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useConfig } from "wagmi";
 import { getEnsNameQueryOptions } from "wagmi/query";
 
-import { Identity, useIdentity } from "@/components/identity";
+import { Avatar, useIdentity } from "@/components/identity";
 import { Card, EmptyState, ErrorNotice } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { Button } from "@/components/ui/button";
@@ -62,10 +63,12 @@ type List = "voted" | "not-voted";
 type SortKey = "weight" | "choice" | "time";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
 
+// Chevron | voter | vote | weight | when. On phones: chevron | voter | vote,
+// with weight and time folded under the name.
 const VOTED_GRID =
-  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 sm:grid-cols-[minmax(0,1fr)_88px_128px_104px]";
+  "grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-3 px-4 sm:grid-cols-[16px_minmax(0,1fr)_80px_148px_96px]";
 const NOT_VOTED_GRID =
-  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-4";
+  "grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-3 px-4";
 
 const pct = (share: number) =>
   formatPercent(share, { decimals: share < 1 ? 2 : 1 });
@@ -118,21 +121,16 @@ function ChoiceLabel({
   );
 }
 
-function WeightCell({ weight, share }: { weight: number; share: number }) {
+/** "790.9K LPT  10.0%" on one line. */
+function Weight({ weight, share }: { weight: number; share?: number }) {
   return (
-    <span className="flex flex-col items-end gap-1">
-      <span className="font-mono text-[13px] tabular-nums">
-        {formatLPT(weight, { compact: true })}
-      </span>
-      <span className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground tabular-nums">
-        <span className="hidden h-1 w-10 overflow-hidden rounded-full bg-foreground/[0.08] sm:block">
-          <span
-            className="block h-full rounded-full bg-foreground/40"
-            style={{ width: `${Math.min(100, Math.max(2, share))}%` }}
-          />
+    <span className="font-mono text-[13px] whitespace-nowrap tabular-nums">
+      {formatLPT(weight, { compact: true })}
+      {share != null && (
+        <span className="ml-2 inline-block w-12 text-right text-[11.5px] text-muted-foreground">
+          {pct(share)}
         </span>
-        {pct(share)}
-      </span>
+      )}
     </span>
   );
 }
@@ -146,11 +144,13 @@ function When({ vote, nowMs }: { vote: CastVote; nowMs: number }) {
       href={txUrl(vote.tx)}
       target="_blank"
       rel="noreferrer"
-      title={new Date(vote.timestamp * 1000).toLocaleString()}
-      className="inline-flex items-center gap-1 underline-offset-4 hover:text-foreground hover:underline"
+      title={`${new Date(
+        vote.timestamp * 1000
+      ).toLocaleString()} · view transaction`}
+      className="group/when inline-flex items-center gap-1 whitespace-nowrap underline-offset-4 hover:text-foreground hover:underline"
     >
       {label}
-      <ExternalLink className="size-3" />
+      <ExternalLink className="size-3 opacity-0 transition-opacity group-hover/when:opacity-100 group-focus-visible/when:opacity-100" />
     </a>
   );
 }
@@ -159,7 +159,7 @@ function Reason({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const long = text.length > 180;
   return (
-    <blockquote className="col-span-full mt-1 border-l-2 border-hairline pl-3 text-ui-caption whitespace-pre-line text-muted-foreground">
+    <blockquote className="col-start-2 col-end-[-1] mt-1.5 border-l-2 border-hairline pl-3 text-ui-caption whitespace-pre-line text-muted-foreground">
       <span className={cn(!open && long && "line-clamp-2")}>{text}</span>
       {long && (
         <button
@@ -174,81 +174,190 @@ function Reason({ text }: { text: string }) {
   );
 }
 
-function OverridesToggle({
-  count,
+/** Avatar and name on one line, linking to the account or orchestrator. */
+function VoterName({
+  address,
+  href,
+  size = 22,
+  children,
+}: {
+  address: string;
+  href: string;
+  size?: number;
+  children?: React.ReactNode;
+}) {
+  const { name, avatar, display } = useIdentity(address);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <Link
+        href={href}
+        title={address}
+        className="-m-1 flex min-w-0 items-center gap-2.5 rounded-sm p-1 outline-none hover:underline focus-visible:ring-1 focus-visible:ring-green-bright/40"
+        style={{ textUnderlineOffset: 4 }}
+      >
+        <Avatar address={address} src={avatar} size={size} />
+        <span
+          className={cn(
+            "truncate text-ui-body text-foreground",
+            !name && "font-mono text-[13px] tracking-tight"
+          )}
+        >
+          {display}
+        </span>
+      </Link>
+      {children}
+    </span>
+  );
+}
+
+/** "via vitalik.eth": whose vote a delegator replaced. */
+function Via({ address }: { address: string }) {
+  const { display } = useIdentity(address);
+  return (
+    <span className="truncate text-ui-caption text-muted-foreground">
+      via {display}
+    </span>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="shrink-0 rounded-[4px] border border-hairline px-1 text-[10.5px] leading-4 text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Expand control for an orchestrator's delegators who voted themselves:
+ * a neutral count, plus an amber note only for those who voted differently.
+ */
+function GroupSummary({
+  votes: children,
+  parentChoice,
+  series,
   open,
   onToggle,
 }: {
-  count: number;
+  votes: CastVote[];
+  parentChoice?: VoteChoice;
+  series: TallySeries[];
   open: boolean;
   onToggle: () => void;
 }) {
+  const differing = parentChoice
+    ? series
+        .map((s) => ({
+          label: s.label,
+          n: children.filter(
+            (c) => c.choice === s.key && c.choice !== parentChoice
+          ).length,
+        }))
+        .filter((x) => x.n > 0)
+    : [];
   return (
     <button
       type="button"
       aria-expanded={open}
       onClick={onToggle}
-      title="Delegators who voted their own stake instead of leaving it to this orchestrator"
-      className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-sm text-[11px] whitespace-nowrap text-warm hover:underline"
+      title={`${children.length} delegator${
+        children.length === 1 ? "" : "s"
+      } voted their own stake`}
+      className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm text-ui-caption whitespace-nowrap text-muted-foreground hover:text-foreground"
     >
-      {count} voted separately
-      <ChevronDown
-        className={cn("size-3 transition-transform", open && "rotate-180")}
+      <span className="rounded-full bg-hover px-1.5 font-mono text-[11px] leading-[18px] tabular-nums">
+        +{children.length}
+      </span>
+      {differing.length > 0 && (
+        <span className="text-warm">
+          {differing.map((d) => `${d.n} voted ${d.label}`).join(", ")}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Chevron({
+  open,
+  onToggle,
+  label,
+}: {
+  open: boolean;
+  onToggle?: () => void;
+  label: string;
+}) {
+  if (!onToggle) return <span />;
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={label}
+      onClick={onToggle}
+      className="-m-1 inline-flex cursor-pointer items-center justify-center rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-green-bright/40"
+    >
+      <ChevronRight
+        className={cn("size-3.5 transition-transform", open && "rotate-90")}
       />
     </button>
   );
 }
 
-/** Delegators of an orchestrator who voted their own stake. */
-function OverrideRows({
+/** Delegators nested under their orchestrator. */
+function ChildRows({
   votes,
   series,
   nowMs,
-  orchestratorChoice,
+  parentChoice,
 }: {
   votes: CastVote[];
   series: TallySeries[];
   nowMs: number;
-  /** The orchestrator's own vote, when it voted. */
-  orchestratorChoice?: VoteChoice;
+  parentChoice?: VoteChoice;
 }) {
   return (
-    <ul className="col-span-full -mx-4 mt-2 border-t border-hairline bg-foreground/[0.025]">
-      {votes.map((v) => (
-        <li
-          key={v.voter}
-          className={cn(VOTED_GRID, "py-2 pl-10 text-ui-caption")}
-        >
-          <Identity
-            address={v.voter}
-            size={20}
-            secondary={
-              orchestratorChoice && v.choice !== orchestratorChoice ? (
-                <span className="text-warm">Delegator · voted differently</span>
-              ) : (
-                "Delegator"
-              )
-            }
-          />
-          <span className="justify-self-end sm:justify-self-start">
-            <ChoiceLabel choice={v.choice} series={series} />
-          </span>
-          <span className="col-start-1 font-mono text-[12px] text-muted-foreground tabular-nums sm:col-start-auto sm:justify-self-end">
-            {formatLPT(v.weight, { compact: true })}
-          </span>
-          <span className="justify-self-end text-muted-foreground">
-            <When vote={v} nowMs={nowMs} />
-          </span>
-        </li>
-      ))}
+    <ul className="col-span-full -mx-4 mt-2.5 -mb-2.5 border-t border-hairline bg-foreground/[0.025]">
+      {votes.map((v) => {
+        const differs = parentChoice != null && v.choice !== parentChoice;
+        return (
+          <li
+            key={v.voter}
+            className={cn(
+              VOTED_GRID,
+              "border-b border-hairline py-2 last:border-0"
+            )}
+          >
+            <span />
+            <span className="flex min-w-0 flex-col gap-0.5 pl-5">
+              <VoterName
+                address={v.voter}
+                href={`/accounts/${v.voter}`}
+                size={18}
+              >
+                {differs && (
+                  <span className="shrink-0 text-ui-caption text-warm">
+                    voted differently
+                  </span>
+                )}
+              </VoterName>
+              <span className="font-mono text-[11.5px] text-muted-foreground tabular-nums sm:hidden">
+                {formatLPT(v.weight, { compact: true })} ·{" "}
+                <When vote={v} nowMs={nowMs} />
+              </span>
+            </span>
+            <span className="justify-self-end sm:justify-self-start">
+              <ChoiceLabel choice={v.choice} series={series} />
+            </span>
+            <span className="hidden justify-self-end text-muted-foreground sm:block">
+              <Weight weight={v.weight} />
+            </span>
+            <span className="hidden justify-self-end text-ui-caption text-muted-foreground sm:block">
+              <When vote={v} nowMs={nowMs} />
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
-}
-
-/** "Delegates to vitalik.eth": which orchestrator's vote a delegator replaced. */
-function DelegatesTo({ address }: { address: string }) {
-  const { display } = useIdentity(address);
-  return <>Delegator · via {display}</>;
 }
 
 function SortHeader({
@@ -306,8 +415,9 @@ function ShowMore({
 /**
  * Who voted and which active orchestrators haven't, for a poll or treasury
  * proposal. Orchestrators vote with their delegators' stake; a delegator who
- * votes themselves overrides that for their own stake, and those overrides
- * are grouped under their orchestrator.
+ * votes themselves overrides that for their own stake. Such delegators are
+ * nested under their orchestrator (in either list); delegators whose
+ * orchestrator didn't vote are listed on their own.
  */
 export function VotesPanel({
   votes,
@@ -331,16 +441,17 @@ export function VotesPanel({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "weight", dir: "desc" });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [choice, setChoice] = useState<VoteChoice | null>(null);
 
   const all = useMemo(() => votes ?? [], [votes]);
-  const [choice, setChoice] = useState<VoteChoice | null>(null);
   const active = useMemo(() => electorate?.orchestrators ?? [], [electorate]);
   const voterIds = useMemo(() => new Set(all.map((v) => v.voter)), [all]);
   const nonVoters = useMemo(
     () => active.filter((o) => !voterIds.has(o.id)),
     [active, voterIds]
   );
-  const overrides = useMemo(() => {
+  /** Delegators who voted, grouped by their orchestrator. */
+  const children = useMemo(() => {
     const map = new Map<string, CastVote[]>();
     for (const v of all) {
       if (v.orchestrator || !v.delegate) continue;
@@ -349,6 +460,14 @@ export function VotesPanel({
     for (const group of map.values()) group.sort((a, b) => b.weight - a.weight);
     return map;
   }, [all]);
+  // A delegator is nested when their orchestrator voted too.
+  const topLevel = useMemo(
+    () =>
+      all.filter(
+        (v) => v.orchestrator || !v.delegate || !voterIds.has(v.delegate)
+      ),
+    [all, voterIds]
+  );
 
   const q = query.trim().toLowerCase();
   const addresses = useMemo(
@@ -356,8 +475,11 @@ export function VotesPanel({
     [all, nonVoters]
   );
   const names = useEnsNames(addresses, q.length > 0);
-  const matches = (address: string) =>
+  const matchesQuery = (address: string) =>
     !q || address.includes(q) || Boolean(names.get(address)?.includes(q));
+  const matchesVote = (v: CastVote) =>
+    matchesQuery(v.voter) && (!choice || v.choice === choice);
+  const filtering = Boolean(q || choice);
 
   const votedWeight = all.reduce((s, v) => s + v.weight, 0);
   const activeStake = active.reduce((s, o) => s + o.totalStake, 0);
@@ -369,16 +491,37 @@ export function VotesPanel({
       : sort.key === "time"
       ? v.timestamp ?? 0
       : series.findIndex((s) => s.key === v.choice);
-  const shownVotes = all
-    .filter((v) => matches(v.voter) && (!choice || v.choice === choice))
+
+  // A row shows if it matches, or if one of its nested delegators does (the
+  // group then opens so the match is visible).
+  const shownVotes = topLevel
+    .map((v) => {
+      const kids = v.orchestrator ? children.get(v.voter) ?? [] : [];
+      const kidMatches = filtering ? kids.filter(matchesVote) : kids;
+      return {
+        vote: v,
+        kids: filtering ? kidMatches : kids,
+        self: matchesVote(v),
+      };
+    })
+    .filter((r) => r.self || (filtering && r.kids.length > 0))
     .sort((a, b) => {
-      const d = rank(a) - rank(b) || a.weight - b.weight;
+      const d = rank(a.vote) - rank(b.vote) || a.vote.weight - b.vote.weight;
       return sort.dir === "asc" ? d : -d;
     });
-  const shownNonVoters = nonVoters.filter((o) => matches(o.id));
+  const shownNonVoters = nonVoters
+    .map((o) => {
+      const kids = children.get(o.id) ?? [];
+      return {
+        o,
+        kids: filtering ? kids.filter(matchesVote) : kids,
+        self: matchesQuery(o.id),
+      };
+    })
+    .filter((r) => (q ? r.self || r.kids.length > 0 : true));
   const shownRows =
     list === "voted" ? shownVotes.length : shownNonVoters.length;
-  const visible = q ? shownRows : Math.min(limit, shownRows);
+  const visible = filtering ? shownRows : Math.min(limit, shownRows);
 
   if (error) return <ErrorNotice error={error} onRetry={onRetry} />;
 
@@ -395,6 +538,8 @@ export function VotesPanel({
       else next.add(id);
       return next;
     });
+  const isOpen = (id: string, selfMatches: boolean) =>
+    expanded.has(id) || (filtering && !selfMatches);
   const switchTo = (l: List) => {
     setList(l);
     setLimit(PAGE);
@@ -521,7 +666,11 @@ export function VotesPanel({
           <EmptyState
             icon={<Search />}
             title="No matches"
-            description={`Nobody in this list matches “${query.trim()}”.`}
+            description={
+              q
+                ? `Nobody in this list matches “${query.trim()}”.`
+                : "No votes match this filter."
+            }
           />
         </Card>
       ) : list === "voted" ? (
@@ -532,6 +681,7 @@ export function VotesPanel({
               "hidden border-b border-hairline py-2.5 text-ui-caption text-muted-foreground sm:grid"
             )}
           >
+            <span />
             <span>Voter</span>
             <SortHeader label="Vote" k="choice" sort={sort} onSort={onSort} />
             <SortHeader
@@ -550,79 +700,76 @@ export function VotesPanel({
             />
           </div>
           <ul>
-            {shownVotes.slice(0, visible).map((v) => {
+            {shownVotes.slice(0, visible).map(({ vote: v, kids, self }) => {
               const share =
                 votedWeight > 0 ? (v.weight / votedWeight) * 100 : 0;
-              const own = v.orchestrator ? overrides.get(v.voter) ?? [] : [];
-              const open = expanded.has(v.voter);
+              const open = kids.length > 0 && isOpen(v.voter, self);
+              const toggleThis =
+                kids.length > 0 ? () => toggle(v.voter) : undefined;
               return (
                 <li
                   key={v.voter}
                   className={cn(
                     VOTED_GRID,
-                    "border-b border-hairline py-3 last:border-0"
+                    "border-b border-hairline py-2.5 last:border-0"
                   )}
                 >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Identity
+                  <Chevron
+                    open={open}
+                    onToggle={toggleThis}
+                    label="Delegators who voted separately"
+                  />
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <VoterName
                       address={v.voter}
                       href={
                         v.orchestrator
                           ? `/orchestrators/${v.voter}`
                           : `/accounts/${v.voter}`
                       }
-                      size={24}
-                      secondary={
-                        v.orchestrator ? (
-                          "Orchestrator"
-                        ) : v.delegate ? (
-                          <DelegatesTo address={v.delegate} />
-                        ) : (
-                          "Delegator"
-                        )
-                      }
-                    />
-                    {own.length > 0 && (
-                      <OverridesToggle
-                        count={own.length}
-                        open={open}
-                        onToggle={() => toggle(v.voter)}
-                      />
-                    )}
+                    >
+                      {!v.orchestrator && <Tag>Delegator</Tag>}
+                      {!v.orchestrator && v.delegate && (
+                        <Via address={v.delegate} />
+                      )}
+                      {kids.length > 0 && (
+                        <GroupSummary
+                          votes={kids}
+                          parentChoice={v.choice}
+                          series={series}
+                          open={open}
+                          onToggle={() => toggle(v.voter)}
+                        />
+                      )}
+                    </VoterName>
+                    <span className="font-mono text-[11.5px] text-muted-foreground tabular-nums sm:hidden">
+                      {formatLPT(v.weight, { compact: true })} · {pct(share)} ·{" "}
+                      <When vote={v} nowMs={nowMs} />
+                    </span>
                   </span>
                   <span className="justify-self-end sm:justify-self-start">
                     <ChoiceLabel choice={v.choice} series={series} />
                   </span>
-                  <span className="col-start-1 sm:col-start-auto sm:justify-self-end">
-                    <span className="sm:hidden">
-                      <span className="font-mono text-[13px] tabular-nums">
-                        {formatLPT(v.weight, { compact: true })}
-                      </span>
-                      <span className="ml-1.5 font-mono text-[11px] text-muted-foreground tabular-nums">
-                        {pct(share)}
-                      </span>
-                    </span>
-                    <span className="hidden sm:block">
-                      <WeightCell weight={v.weight} share={share} />
-                    </span>
+                  <span className="hidden justify-self-end sm:block">
+                    <Weight weight={v.weight} share={share} />
                   </span>
-                  <span className="justify-self-end text-ui-caption text-muted-foreground">
+                  <span className="hidden justify-self-end text-ui-caption text-muted-foreground sm:block">
                     <When vote={v} nowMs={nowMs} />
                   </span>
                   {v.reason && <Reason text={v.reason} />}
                   {open && (
-                    <OverrideRows
-                      votes={own}
+                    <ChildRows
+                      votes={kids}
                       series={series}
                       nowMs={nowMs}
-                      orchestratorChoice={v.choice}
+                      parentChoice={v.choice}
                     />
                   )}
                 </li>
               );
             })}
           </ul>
-          {!q && (
+          {!filtering && (
             <ShowMore
               shown={visible}
               total={shownRows}
@@ -638,49 +785,50 @@ export function VotesPanel({
               "hidden border-b border-hairline py-2.5 text-ui-caption text-muted-foreground sm:grid"
             )}
           >
+            <span />
             <span>Orchestrator</span>
             <span className="text-right">Stake</span>
           </div>
           <ul>
-            {shownNonVoters.slice(0, visible).map((o) => {
-              const own = overrides.get(o.id) ?? [];
-              const open = expanded.has(o.id);
+            {shownNonVoters.slice(0, visible).map(({ o, kids, self }) => {
+              const open = kids.length > 0 && isOpen(o.id, self);
               return (
                 <li
                   key={o.id}
                   className={cn(
                     NOT_VOTED_GRID,
-                    "border-b border-hairline py-3 last:border-0"
+                    "border-b border-hairline py-2.5 last:border-0"
                   )}
                 >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Identity
-                      address={o.id}
-                      href={`/orchestrators/${o.id}`}
-                      size={24}
-                    />
-                    {own.length > 0 && (
-                      <OverridesToggle
-                        count={own.length}
+                  <Chevron
+                    open={open}
+                    onToggle={kids.length > 0 ? () => toggle(o.id) : undefined}
+                    label="Delegators who voted separately"
+                  />
+                  <VoterName address={o.id} href={`/orchestrators/${o.id}`}>
+                    {kids.length > 0 && (
+                      <GroupSummary
+                        votes={kids}
+                        series={series}
                         open={open}
                         onToggle={() => toggle(o.id)}
                       />
                     )}
-                  </span>
-                  <WeightCell
+                  </VoterName>
+                  <Weight
                     weight={o.totalStake}
                     share={
                       activeStake > 0 ? (o.totalStake / activeStake) * 100 : 0
                     }
                   />
                   {open && (
-                    <OverrideRows votes={own} series={series} nowMs={nowMs} />
+                    <ChildRows votes={kids} series={series} nowMs={nowMs} />
                   )}
                 </li>
               );
             })}
           </ul>
-          {!q && (
+          {!filtering && (
             <ShowMore
               shown={visible}
               total={shownRows}
