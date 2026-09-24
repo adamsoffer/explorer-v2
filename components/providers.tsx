@@ -34,6 +34,7 @@ import {
   RPC_URLS,
   WALLET_CONNECT_PROJECT_ID,
 } from "@/lib/config";
+import { WalletMemory } from "@/lib/hooks/watchlist";
 
 import { ThemeProvider } from "./theme";
 
@@ -161,7 +162,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
             }}
           >
             <TooltipProvider>
-              <StakingProvider>{children}</StakingProvider>
+              <StakingProvider>
+                <WalletMemory />
+                {children}
+              </StakingProvider>
             </TooltipProvider>
             <Toaster
               position="bottom-center"

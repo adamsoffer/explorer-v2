@@ -41,21 +41,31 @@ import {
   formatETH,
   formatLPT,
   fromWei,
+  shortAddress,
   toWei,
 } from "@/lib/format";
 import { useOrchestrators, useProtocol } from "@/lib/hooks/queries";
+import { useKnownWallets } from "@/lib/hooks/watchlist";
 import { useProtocolContract } from "@/lib/staking/contracts";
 import { bondHints, EMPTY_HINT, simulateHint } from "@/lib/staking/hints";
 import { refreshWhenIndexed } from "@/lib/subgraph/sync";
 
 /* ── Action model ────────────────────────────────────────────────────────── */
 
-export type StakingAction =
+export type StakingAction = (
   | { kind: "delegate"; to: string }
   | { kind: "unstake"; delegate: string; staked: number }
   | { kind: "withdrawStake"; lockId: number; amount: number }
   | { kind: "rebond"; lockId: number; amount: number; delegate: string }
-  | { kind: "withdrawFees"; amount: number };
+  | { kind: "withdrawFees"; amount: number }
+) & {
+  /**
+   * The account this action is for. When it isn't the account active in
+   * the wallet, the dialog asks you to switch before anything can be signed.
+   * Omitted means "whichever account is active".
+   */
+  account?: string;
+};
 
 const StakingContext = createContext<{ open: (a: StakingAction) => void }>({
   open: () => {},
@@ -87,7 +97,7 @@ export function StakingProvider({ children }: { children: React.ReactNode }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           {action && (
-            <StakingFlow action={action} onDone={() => setOpen(false)} />
+            <AccountGate action={action} onDone={() => setOpen(false)} />
           )}
         </DialogContent>
       </Dialog>
@@ -99,7 +109,8 @@ export function StakingProvider({ children }: { children: React.ReactNode }) {
 
 type Step = { key: string; label: string };
 
-function useTx(onConfirmed: () => void) {
+function useTx(onConfirmed: () => void, signer: string | undefined) {
+  const { address } = useAccount();
   const { writeContractAsync, isPending: signing, reset } = useWriteContract();
   const [hash, setHash] = useState<`0x${string}` | undefined>();
   const receipt = useWaitForTransactionReceipt({ hash, chainId: L2_CHAIN.id });
@@ -112,7 +123,15 @@ function useTx(onConfirmed: () => void) {
   return {
     send: async (args: Parameters<typeof writeContractAsync>[0]) => {
       reset();
-      const h = await writeContractAsync({ ...args, chainId: L2_CHAIN.id });
+      // Never sign from an account other than the one this action is for.
+      if (!signer || address?.toLowerCase() !== signer.toLowerCase()) {
+        throw new Error("Switch to the right account in your wallet first");
+      }
+      const h = await writeContractAsync({
+        ...args,
+        account: signer as `0x${string}`,
+        chainId: L2_CHAIN.id,
+      });
       setHash(h);
       return h;
     },
@@ -282,14 +301,87 @@ function Notice({
   );
 }
 
-/* ── The flow ────────────────────────────────────────────────────────────── */
+/* ── Account gate ────────────────────────────────────────────────────────── */
 
-function StakingFlow({
+/**
+ * Wallets sign from one active account and a site can't change it, so when
+ * the action belongs to another of your wallets we ask you to switch and
+ * carry on the moment the wallet reports that account.
+ */
+function AccountGate({
   action,
   onDone,
 }: {
   action: StakingAction;
   onDone: () => void;
+}) {
+  const { address } = useAccount();
+  const active = address?.toLowerCase();
+  const target = action.account?.toLowerCase() ?? active;
+  const { list } = useKnownWallets();
+  const label = list.find((w) => w.address === target)?.label;
+
+  if (target && active && target === active) {
+    // Keyed so a later account switch restarts the flow with fresh reads.
+    return (
+      <StakingFlow
+        key={active}
+        action={action}
+        onDone={onDone}
+        signer={active}
+      />
+    );
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Switch account</DialogTitle>
+        <DialogDescription>
+          This position belongs to another of your wallets. Switch to it in your
+          wallet extension or app to continue. The dialog picks it up
+          automatically.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogBody>
+        {target && (
+          <div className="rounded-lg border border-hairline p-3">
+            <Identity
+              address={target}
+              href={null}
+              size={26}
+              label={label}
+              secondary="Switch to this account"
+            />
+          </div>
+        )}
+        {active && (
+          <p className="text-ui-caption text-muted-foreground">
+            Active now:{" "}
+            <span className="font-mono">{shortAddress(active)}</span>
+          </p>
+        )}
+      </DialogBody>
+      <DialogFooter>
+        <div className="flex w-full items-center justify-center gap-2 text-ui-caption text-muted-foreground sm:justify-end">
+          <Loader2 className="size-3.5 animate-spin" />
+          Waiting for your wallet…
+        </div>
+      </DialogFooter>
+    </>
+  );
+}
+
+/* ── The flow ────────────────────────────────────────────────────────────── */
+
+function StakingFlow({
+  action,
+  onDone,
+  signer,
+}: {
+  action: StakingAction;
+  onDone: () => void;
+  signer: string;
 }) {
   const { address, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
@@ -356,8 +448,8 @@ function StakingFlow({
 
   const approveTx = useTx(() => {
     refetchAllowance();
-  });
-  const tx = useTx(refresh);
+  }, signer);
+  const tx = useTx(refresh, signer);
 
   const amountWei = (() => {
     try {

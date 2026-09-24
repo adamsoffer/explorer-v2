@@ -22,7 +22,11 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { L1_CHAIN } from "@/lib/config";
 import { shortAddress } from "@/lib/format";
-import { type PortfolioAccount, useWatchlist } from "@/lib/hooks/watchlist";
+import {
+  type PortfolioAccount,
+  useKnownWallets,
+  useWatchlist,
+} from "@/lib/hooks/watchlist";
 
 function Chip({
   active,
@@ -90,7 +94,9 @@ function AccountChip({
       active={active}
       onClick={onSelect}
       onRemove={onRemove}
-      removeLabel="Stop tracking"
+      removeLabel={
+        account.source === "watched" ? "Stop tracking" : "Forget this wallet"
+      }
     >
       <Avatar address={account.address} src={avatar} size={20} />
       <span
@@ -98,13 +104,22 @@ function AccountChip({
       >
         {account.label ?? name ?? shortAddress(account.address)}
       </span>
-      {account.source === "wallet" ? (
-        <Wallet
-          className="size-3 text-subtle-foreground"
-          aria-label="Connected wallet"
-        />
-      ) : (
+      {account.source === "watched" ? (
         <Eye className="size-3 text-subtle-foreground" aria-label="Watching" />
+      ) : (
+        <span className="relative inline-flex">
+          <Wallet
+            className="size-3 text-subtle-foreground"
+            aria-label={
+              account.source === "wallet"
+                ? "Your wallet, active now"
+                : "Your wallet"
+            }
+          />
+          {account.source === "wallet" && (
+            <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-bright ring-1 ring-background" />
+          )}
+        </span>
       )}
     </Chip>
   );
@@ -222,6 +237,7 @@ export function ScopeBar({
   onScope: (s: string) => void;
 }) {
   const { remove } = useWatchlist();
+  const { remove: forget } = useKnownWallets();
   const [adding, setAdding] = useState(false);
 
   return (
@@ -241,12 +257,13 @@ export function ScopeBar({
           active={scope === a.address || accounts.length === 1}
           onSelect={() => onScope(scope === a.address ? "all" : a.address)}
           onRemove={
-            a.source === "watched"
-              ? () => {
-                  remove(a.address);
+            a.source === "wallet"
+              ? undefined
+              : () => {
+                  if (a.source === "watched") remove(a.address);
+                  else forget(a.address);
                   if (scope === a.address) onScope("all");
                 }
-              : undefined
           }
         />
       ))}

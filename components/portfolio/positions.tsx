@@ -56,12 +56,18 @@ function AccountCell({ account }: { account: PortfolioAccount }) {
           )}
         </span>
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          {account.source === "wallet" ? (
-            <Wallet className="size-3" />
-          ) : (
+          {account.source === "watched" ? (
             <Eye className="size-3" />
+          ) : (
+            <Wallet className="size-3" />
           )}
-          {account.source === "wallet" ? "Connected" : "Watching"}
+          {
+            {
+              wallet: "Your wallet · active",
+              known: "Your wallet",
+              watched: "Watching",
+            }[account.source]
+          }
         </span>
       </span>
     </Link>
@@ -78,7 +84,7 @@ function RowActions({
   const { open } = useStaking();
   if (!canManage) {
     return (
-      <Tooltip content="Read-only. Connect this wallet to manage it.">
+      <Tooltip content="Watching only. Connect this wallet once to manage it here.">
         <span className="inline-flex size-8 items-center justify-center text-subtle-foreground">
           <Eye className="size-4" />
         </span>
@@ -97,7 +103,13 @@ function RowActions({
       <MenuContent>
         {position.delegate && (
           <MenuItem
-            onClick={() => open({ kind: "delegate", to: position.delegate! })}
+            onClick={() =>
+              open({
+                kind: "delegate",
+                to: position.delegate!,
+                account: position.account.address,
+              })
+            }
           >
             <Plus /> Stake more
           </MenuItem>
@@ -110,6 +122,7 @@ function RowActions({
             onClick={() =>
               open({
                 kind: "unstake",
+                account: position.account.address,
                 delegate: position.delegate!,
                 staked: position.stake,
               })
@@ -123,7 +136,11 @@ function RowActions({
             <MenuSeparator />
             <MenuItem
               onClick={() =>
-                open({ kind: "withdrawFees", amount: position.fees })
+                open({
+                  kind: "withdrawFees",
+                  amount: position.fees,
+                  account: position.account.address,
+                })
               }
             >
               <Wallet /> Withdraw {formatETH(position.fees)}

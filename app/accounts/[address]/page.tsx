@@ -21,7 +21,7 @@ export default function AccountPage() {
   const address = raw.toLowerCase();
   const valid = isAddress(address);
   const { name, avatar } = useIdentity(valid ? address : null);
-  const { walletAddress } = usePortfolioAccounts();
+  const { walletAddress, isOwned } = usePortfolioAccounts();
   const { list, add, remove } = useWatchlist();
   const { data: orchestrators } = useOrchestrators();
 
@@ -32,15 +32,18 @@ export default function AccountPage() {
         source:
           address === walletAddress
             ? ("wallet" as const)
+            : isOwned(address)
+            ? ("known" as const)
             : ("watched" as const),
       },
     ],
-    [address, walletAddress]
+    [address, walletAddress, isOwned]
   );
 
   if (!valid) notFound();
 
   const isYou = address === walletAddress;
+  const isYours = isOwned(address);
   const watched = list.some((w) => w.address === address);
   const isOrchestrator = orchestrators?.some((o) => o.id === address);
 
@@ -51,7 +54,11 @@ export default function AccountPage() {
           <Avatar address={address} src={avatar} size={52} />
           <div className="flex min-w-0 flex-col gap-1">
             <div className="text-ui-caption text-muted-foreground">
-              {isYou ? "Your account" : "Account"}
+              {isYou
+                ? "Your wallet · active"
+                : isYours
+                ? "Your wallet"
+                : "Account"}
             </div>
             <h1 className="truncate text-[26px] leading-8 font-light tracking-[-0.01em]">
               {name ?? (
@@ -82,7 +89,7 @@ export default function AccountPage() {
               <Server /> Orchestrator profile
             </Button>
           )}
-          {!isYou &&
+          {!isYours &&
             (watched ? (
               <Button size="sm" variant="ghost" onClick={() => remove(address)}>
                 <Check /> In your portfolio
@@ -100,7 +107,7 @@ export default function AccountPage() {
       </header>
       <PortfolioView
         accounts={accounts}
-        canManage={(a) => a === walletAddress}
+        canManage={isOwned}
         showScope={false}
       />
     </Page>

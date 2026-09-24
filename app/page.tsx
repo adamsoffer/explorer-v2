@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { usePortfolioAccounts } from "@/lib/hooks/watchlist";
 
 export default function PortfolioPage() {
-  const { accounts, walletAddress, isReconnecting } = usePortfolioAccounts();
+  const { accounts, isOwned, isReconnecting } = usePortfolioAccounts();
 
   if (isReconnecting && accounts.length === 0) {
     return (
@@ -29,10 +29,7 @@ export default function PortfolioPage() {
   return (
     <Page>
       <PageHeader title="Portfolio" className="mb-5" />
-      <PortfolioView
-        accounts={accounts}
-        canManage={(a) => a === walletAddress}
-      />
+      <PortfolioView accounts={accounts} canManage={isOwned} />
     </Page>
   );
 }

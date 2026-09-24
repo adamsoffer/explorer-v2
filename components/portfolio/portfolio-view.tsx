@@ -281,9 +281,10 @@ export function PortfolioView({
   const perRound = view ? view.stake * view.rate + view.commission : 0;
   const lpt = prices?.lpt;
   const multi = accounts.length > 1;
-  const firstManageable = view?.positions.find((p) =>
-    canManage(p.account.address)
-  );
+  // Prefer the active wallet so the header action needs no account switch.
+  const firstManageable =
+    view?.positions.find((p) => p.account.source === "wallet") ??
+    view?.positions.find((p) => canManage(p.account.address));
   const feesToWithdraw = view?.positions
     .filter((p) => canManage(p.account.address) && p.fees > 0)
     .sort((a, b) => b.fees - a.fees)[0];
@@ -367,7 +368,11 @@ export function PortfolioView({
                 <button
                   type="button"
                   onClick={() =>
-                    open({ kind: "withdrawFees", amount: feesToWithdraw.fees })
+                    open({
+                      kind: "withdrawFees",
+                      amount: feesToWithdraw.fees,
+                      account: feesToWithdraw.account.address,
+                    })
                   }
                   className="cursor-pointer text-foreground underline-offset-4 hover:underline"
                 >
@@ -435,7 +440,11 @@ export function PortfolioView({
                   <Button
                     size="xs"
                     onClick={() =>
-                      open({ kind: "delegate", to: firstManageable.delegate! })
+                      open({
+                        kind: "delegate",
+                        to: firstManageable.delegate!,
+                        account: firstManageable.account.address,
+                      })
                     }
                   >
                     Stake more

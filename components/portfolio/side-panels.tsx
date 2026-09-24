@@ -130,6 +130,7 @@ export function PendingWithdrawals({
                     onClick={() =>
                       open({
                         kind: "withdrawStake",
+                        account: l.account,
                         lockId: l.lockId,
                         amount: l.amount,
                       })
@@ -143,6 +144,7 @@ export function PendingWithdrawals({
                   onClick={() =>
                     open({
                       kind: "rebond",
+                      account: l.account,
                       lockId: l.lockId,
                       amount: l.amount,
                       delegate: l.delegate,
