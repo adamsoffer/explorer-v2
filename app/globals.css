@@ -53,7 +53,9 @@
      dissolving into the background. */
   --surface: oklch(0.19 0 0);
   --surface-highlight: inset 0 1px 0 oklch(1 0 0 / 5%);
-  --hairline: var(--border);
+  /* One line colour for every divider and outline (cards, sidebar, search),
+     a touch brighter than the registry border so edges read on black. */
+  --hairline: oklch(1 0 0 / 13%);
   --hover: color-mix(in oklch, var(--foreground) 4%, transparent);
   --active: color-mix(in oklch, var(--foreground) 7%, transparent);
   --subtle-foreground: color-mix(in oklch, var(--foreground) 50%, transparent);
