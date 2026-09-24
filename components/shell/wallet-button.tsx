@@ -93,6 +93,7 @@ function Connected({
   const switchTo = async (target: string) => {
     setPending(target);
     const walletName = connector?.name ?? "your wallet";
+    let pickerShown = true;
     try {
       await openAccountPicker(connector);
     } catch (e) {
@@ -100,16 +101,19 @@ function Connected({
         setPending(null);
         return;
       }
+      pickerShown = false;
     }
-    // Give the wallet a moment to report the switch. If it hasn't (picker
-    // unsupported, or the account exposed without being made active), say
-    // where to finish it.
+    // Give the wallet a moment to report the switch; if it hasn't, say
+    // plainly where to finish it.
     await new Promise((r) => setTimeout(r, 1000));
-    if (activeRef.current !== target) {
-      toast(`Select ${labelOf(target)} in ${walletName}`, {
-        description: "The explorer follows your wallet's active account.",
-      });
-    }
+    if (activeRef.current === target) return;
+    const who = labelOf(target);
+    toast(`Switch to ${who} in ${walletName}`, {
+      description: pickerShown
+        ? `Select it as the active account in ${walletName}. Some wallets don't show a picker to websites; if nothing appeared, open ${walletName} and switch there. The explorer follows along automatically.`
+        : `${walletName} doesn't let websites change its account. Open it and select ${who}; the explorer follows along automatically.`,
+      duration: 8000,
+    });
   };
 
   return (

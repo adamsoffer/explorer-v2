@@ -55,15 +55,20 @@ function AccountCell({ account }: { account: PortfolioAccount }) {
             </span>
           )}
         </span>
-        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
           {account.source === "watched" ? (
-            <Eye className="size-3" />
+            <Eye className="size-3 shrink-0" />
           ) : (
-            <Wallet className="size-3" />
+            <span className="relative inline-flex shrink-0">
+              <Wallet className="size-3" />
+              {account.source === "wallet" && (
+                <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-bright ring-1 ring-background" />
+              )}
+            </span>
           )}
           {
             {
-              wallet: "Your wallet · active",
+              wallet: "Active wallet",
               known: "Your wallet",
               watched: "Watching",
             }[account.source]

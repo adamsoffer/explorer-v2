@@ -54,11 +54,7 @@ export default function AccountPage() {
           <Avatar address={address} src={avatar} size={52} />
           <div className="flex min-w-0 flex-col gap-1">
             <div className="text-ui-caption text-muted-foreground">
-              {isYou
-                ? "Your wallet · active"
-                : isYours
-                ? "Your wallet"
-                : "Account"}
+              {isYou ? "Active wallet" : isYours ? "Your wallet" : "Account"}
             </div>
             <h1 className="truncate text-[26px] leading-8 font-light tracking-[-0.01em]">
               {name ?? (
