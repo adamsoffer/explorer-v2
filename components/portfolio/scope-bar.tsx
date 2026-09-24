@@ -7,6 +7,7 @@ import { normalize } from "viem/ens";
 import { useEnsAddress } from "wagmi";
 
 import { Avatar, useIdentity } from "@/components/identity";
+import { AddWalletDialog } from "@/components/portfolio/add-wallet";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -239,6 +240,7 @@ export function ScopeBar({
   const { remove } = useWatchlist();
   const { remove: forget } = useKnownWallets();
   const [adding, setAdding] = useState(false);
+  const [addingWallet, setAddingWallet] = useState(false);
 
   return (
     <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&>*]:shrink-0">
@@ -270,11 +272,20 @@ export function ScopeBar({
       <Button
         variant="ghost"
         size="sm"
+        onClick={() => setAddingWallet(true)}
+        className="rounded-full"
+      >
+        <Wallet /> Add wallet
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setAdding(true)}
         className="rounded-full"
       >
         <Plus /> Track address
       </Button>
+      <AddWalletDialog open={addingWallet} onOpenChange={setAddingWallet} />
       <TrackAddressDialog
         open={adding}
         onOpenChange={setAdding}
