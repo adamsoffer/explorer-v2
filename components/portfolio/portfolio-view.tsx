@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { ActivityList } from "@/components/activity-list";
 import {
@@ -30,6 +30,7 @@ import {
   usePrices,
   useProtocol,
 } from "@/lib/hooks/queries";
+import { useViewScope } from "@/lib/hooks/view-scope";
 import type { PortfolioAccount } from "@/lib/hooks/watchlist";
 import {
   annualize,
@@ -61,10 +62,11 @@ export function PortfolioView({
   canManage: (address: string) => boolean;
   showScope?: boolean;
 }) {
-  const [scopeRaw, setScope] = useState<string>("all");
   const addresses = useMemo(() => accounts.map((a) => a.address), [accounts]);
-  const scope =
-    scopeRaw !== "all" && !addresses.includes(scopeRaw) ? "all" : scopeRaw;
+  // The home portfolio follows the sidebar switcher; a single-account page
+  // always shows that account.
+  const [sharedScope, setScope] = useViewScope(addresses);
+  const scope = showScope ? sharedScope : "all";
   const scoped = useMemo(
     () => (scope === "all" ? addresses : [scope]),
     [scope, addresses]

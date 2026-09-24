@@ -228,6 +228,10 @@ export function TrackAddressDialog({
   );
 }
 
+/**
+ * Header for the portfolio: what you're viewing (chosen in the sidebar
+ * switcher) on the left, ways to add accounts on the right.
+ */
 export function ScopeBar({
   accounts,
   scope,
@@ -241,50 +245,65 @@ export function ScopeBar({
   const { remove: forget } = useKnownWallets();
   const [adding, setAdding] = useState(false);
   const [addingWallet, setAddingWallet] = useState(false);
+  const selected = accounts.find((a) => a.address === scope);
 
   return (
-    <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&>*]:shrink-0">
-      {accounts.length > 1 && (
-        <Chip active={scope === "all"} onClick={() => onScope("all")}>
-          <span className="pl-1.5">All accounts</span>
-          <span className="rounded-full bg-hover px-1.5 font-mono text-[10.5px] tabular-nums">
-            {accounts.length}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        {selected ? (
+          <>
+            <AccountChip
+              account={selected}
+              active
+              onSelect={() => {}}
+              onRemove={
+                selected.source === "wallet"
+                  ? undefined
+                  : () => {
+                      if (selected.source === "watched")
+                        remove(selected.address);
+                      else forget(selected.address);
+                      onScope("all");
+                    }
+              }
+            />
+            {accounts.length > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full"
+                onClick={() => onScope("all")}
+              >
+                Show all wallets
+              </Button>
+            )}
+          </>
+        ) : (
+          <span className="text-ui-body text-muted-foreground">
+            {accounts.length > 1
+              ? `All wallets · ${accounts.length}`
+              : "1 wallet"}
           </span>
-        </Chip>
-      )}
-      {accounts.map((a) => (
-        <AccountChip
-          key={a.address}
-          account={a}
-          active={scope === a.address || accounts.length === 1}
-          onSelect={() => onScope(scope === a.address ? "all" : a.address)}
-          onRemove={
-            a.source === "wallet"
-              ? undefined
-              : () => {
-                  if (a.source === "watched") remove(a.address);
-                  else forget(a.address);
-                  if (scope === a.address) onScope("all");
-                }
-          }
-        />
-      ))}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setAddingWallet(true)}
-        className="rounded-full"
-      >
-        <Wallet /> Add wallet
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setAdding(true)}
-        className="rounded-full"
-      >
-        <Plus /> Track address
-      </Button>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setAddingWallet(true)}
+          className="rounded-full"
+        >
+          <Wallet /> Add wallet
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setAdding(true)}
+          className="rounded-full"
+        >
+          <Plus /> Track address
+        </Button>
+      </div>
       <AddWalletDialog open={addingWallet} onOpenChange={setAddingWallet} />
       <TrackAddressDialog
         open={adding}

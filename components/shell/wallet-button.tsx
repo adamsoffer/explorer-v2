@@ -6,16 +6,20 @@ import {
   Check,
   ChevronsUpDown,
   Copy,
+  Eye,
+  Layers,
   LogOut,
   Plus,
   Wallet,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useAccount, useDisconnect } from "wagmi";
+import { useDisconnect } from "wagmi";
 
 import { Avatar, useIdentity } from "@/components/identity";
 import { AddWalletDialog } from "@/components/portfolio/add-wallet";
+import { TrackAddressDialog } from "@/components/portfolio/scope-bar";
 import { Button } from "@/components/ui/button";
 import {
   Menu,
@@ -25,95 +29,103 @@ import {
   MenuTrigger,
 } from "@/components/ui/misc";
 import { cn } from "@/lib/cn";
-import { shortAddress } from "@/lib/format";
+import { formatLPT, fromWei } from "@/lib/format";
+import { usePortfolio } from "@/lib/hooks/queries";
+import { useViewScope } from "@/lib/hooks/view-scope";
 import {
-  openAccountPicker,
-  PickerDismissedError,
-} from "@/lib/hooks/account-picker";
-import { useKnownWallets } from "@/lib/hooks/watchlist";
+  type PortfolioAccount,
+  usePortfolioAccounts,
+} from "@/lib/hooks/watchlist";
 
-function WalletRow({
+const SOURCE_LABEL = {
+  wallet: "Active wallet",
+  known: "Wallet",
+  watched: "Watching",
+} as const;
+
+function AccountAvatar({
   address,
-  label,
   active,
+  size,
 }: {
   address: string;
-  label?: string;
   active?: boolean;
+  size: number;
 }) {
-  const { display, avatar } = useIdentity(address);
+  const { avatar } = useIdentity(address);
   return (
-    <>
-      <Avatar address={address} src={avatar} size={20} />
-      <span className="min-w-0 flex-1 truncate">{label ?? display}</span>
-      {active && <Check className="size-3.5 text-green-bright" />}
-    </>
+    <span className="relative inline-flex shrink-0">
+      <Avatar address={address} src={avatar} size={size} />
+      {active && (
+        <span
+          aria-label="Active wallet"
+          className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-popover bg-green-bright"
+        />
+      )}
+    </span>
   );
 }
 
+function AccountName({ account }: { account: PortfolioAccount }) {
+  const { display } = useIdentity(account.address);
+  return <>{account.label ?? display}</>;
+}
+
+function AllWalletsIcon({ size }: { size: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-hover"
+      style={{ width: size, height: size }}
+    >
+      <Layers className="size-3.5! text-foreground!" />
+    </span>
+  );
+}
+
+const lpt = (v: number | null) =>
+  v == null ? "…" : formatLPT(v, { compact: true });
+
 /**
- * The connected wallet, plus every other wallet you've connected. Sites
- * can't pick the active account, so choosing another wallet opens the
- * wallet's own account picker and confirms once the switch lands.
+ * The portfolio switcher: picks what the portfolio shows, every wallet or
+ * one account, like a wallet app's account picker. It doesn't change the
+ * wallet's signing account; actions ask for a switch when it matters.
  */
-function Connected({
-  address,
+function PortfolioSwitcher({
+  accounts,
   compact,
-  openAccountModal,
+  connected,
+  openConnectModal,
 }: {
-  address: string;
+  accounts: PortfolioAccount[];
   compact?: boolean;
-  openAccountModal: () => void;
+  connected: boolean;
+  openConnectModal?: () => void;
 }) {
-  // Lowercase so it matches the rest of the app (RainbowKit passes the
-  // checksummed form).
-  const { display, avatar } = useIdentity(address.toLowerCase());
-  const { connector } = useAccount();
+  const router = useRouter();
+  const pathname = usePathname();
   const { disconnect } = useDisconnect();
-  const { list } = useKnownWallets();
-  const [adding, setAdding] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
-  const active = address.toLowerCase();
-  const activeRef = useRef(active);
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-  const others = list.filter((w) => w.address !== active);
-  const labelOf = (a: string) =>
-    list.find((w) => w.address === a)?.label ?? shortAddress(a);
+  const addresses = useMemo(() => accounts.map((a) => a.address), [accounts]);
+  const [scope, setScope] = useViewScope(addresses);
+  const { data } = usePortfolio(addresses);
+  const [addingWallet, setAddingWallet] = useState(false);
+  const [tracking, setTracking] = useState(false);
 
-  useEffect(() => {
-    if (pending && pending === active) {
-      toast.success(`Switched to ${labelOf(active)}`);
-      setPending(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, pending]);
+  const stakeOf = (address: string) => {
+    if (!data) return null;
+    const a = data.accounts.find((x) => x.id === address);
+    return a ? fromWei(a.pendingStake) : 0;
+  };
+  const total = data ? fromWei(data.pendingStake) : null;
+  const multi = accounts.length > 1;
+  // One account is its own "all".
+  const viewing = multi
+    ? accounts.find((a) => a.address === scope)
+    : accounts[0];
+  const activeWallet = accounts.find((a) => a.source === "wallet");
 
-  const switchTo = async (target: string) => {
-    setPending(target);
-    const walletName = connector?.name ?? "your wallet";
-    let pickerShown = true;
-    try {
-      await openAccountPicker(connector);
-    } catch (e) {
-      if (e instanceof PickerDismissedError) {
-        setPending(null);
-        return;
-      }
-      pickerShown = false;
-    }
-    // Give the wallet a moment to report the switch; if it hasn't, say
-    // plainly where to finish it.
-    await new Promise((r) => setTimeout(r, 1000));
-    if (activeRef.current === target) return;
-    const who = labelOf(target);
-    toast(`Switch to ${who} in ${walletName}`, {
-      description: pickerShown
-        ? `Select it as the active account in ${walletName}. Some wallets don't show a picker to websites; if nothing appeared, open ${walletName} and switch there. The explorer follows along automatically.`
-        : `${walletName} doesn't let websites change its account. Open it and select ${who}; the explorer follows along automatically.`,
-      duration: 8000,
-    });
+  const view = (next: string) => {
+    setScope(next);
+    if (pathname !== "/") router.push("/");
   };
 
   return (
@@ -123,104 +135,132 @@ function Connected({
           render={
             <button
               type="button"
-              aria-label="Wallet menu"
+              aria-label="Switch portfolio"
               className={cn(
-                "flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-sm text-left transition-colors outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-green-bright/40 aria-expanded:bg-hover",
-                compact ? "p-1" : "px-2 py-2"
+                "flex min-w-0 cursor-pointer items-center gap-2.5 rounded-sm text-left transition-colors outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-green-bright/40 aria-expanded:bg-hover",
+                compact ? "p-1" : "w-full px-2 py-2"
               )}
             />
           }
         >
-          <Avatar address={address} src={avatar} size={compact ? 26 : 28} />
+          {viewing ? (
+            <AccountAvatar
+              address={viewing.address}
+              active={viewing.source === "wallet"}
+              size={compact ? 26 : 28}
+            />
+          ) : (
+            <AllWalletsIcon size={compact ? 26 : 28} />
+          )}
           {!compact && (
             <>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-ui-caption text-foreground">
-                  {labelOf(active) === shortAddress(active)
-                    ? display
-                    : labelOf(active)}
+                  {viewing ? <AccountName account={viewing} /> : "All wallets"}
                 </span>
-                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-green-bright" />
-                  Arbitrum
+                <span className="truncate font-mono text-[11px] text-muted-foreground tabular-nums">
+                  {lpt(viewing ? stakeOf(viewing.address) : total)}
                 </span>
               </span>
               <ChevronsUpDown className="size-3.5 shrink-0 text-subtle-foreground" />
             </>
           )}
         </MenuTrigger>
-        <MenuContent align={compact ? "end" : "start"} className="w-60">
-          <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle-foreground">
-            Your wallets
-          </div>
-          <MenuItem onClick={openAccountModal}>
-            <WalletRow
-              address={active}
-              label={list.find((w) => w.address === active)?.label}
-              active
-            />
-          </MenuItem>
-          {others.map((w) => (
-            <MenuItem key={w.address} onClick={() => switchTo(w.address)}>
-              <WalletRow address={w.address} label={w.label} />
+        <MenuContent align={compact ? "end" : "start"} className="w-72">
+          {multi && (
+            <MenuItem className="h-auto py-2" onClick={() => view("all")}>
+              <AllWalletsIcon size={28} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">Portfolio</span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  <span className="font-mono tabular-nums">{lpt(total)}</span> ·
+                  All wallets
+                </span>
+              </span>
+              {!viewing && <Check className="text-green-bright!" />}
+            </MenuItem>
+          )}
+          {accounts.map((a) => (
+            <MenuItem
+              key={a.address}
+              className="h-auto py-2"
+              onClick={() => view(a.address)}
+            >
+              <AccountAvatar
+                address={a.address}
+                active={a.source === "wallet"}
+                size={28}
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">
+                  <AccountName account={a} />
+                </span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  <span className="font-mono tabular-nums">
+                    {lpt(stakeOf(a.address))}
+                  </span>{" "}
+                  · {SOURCE_LABEL[a.source]}
+                </span>
+              </span>
+              {viewing?.address === a.address && (
+                <Check className="text-green-bright!" />
+              )}
             </MenuItem>
           ))}
           <MenuSeparator />
-          <MenuItem onClick={() => setAdding(true)}>
-            <Plus /> Add wallet
+          <MenuItem onClick={() => setAddingWallet(true)}>
+            <Wallet /> Add wallet
           </MenuItem>
-          <MenuItem
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(address);
-                toast.success("Address copied");
-              } catch {
-                // clipboard blocked
-              }
-            }}
-          >
-            <Copy /> Copy address
+          <MenuItem onClick={() => setTracking(true)}>
+            <Eye /> Track address
           </MenuItem>
-          <MenuItem onClick={() => disconnect()}>
-            <LogOut /> Disconnect
-          </MenuItem>
+          <MenuSeparator />
+          {connected && activeWallet ? (
+            <>
+              <MenuItem
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(activeWallet.address);
+                    toast.success("Address copied");
+                  } catch {
+                    // clipboard blocked
+                  }
+                }}
+              >
+                <Copy /> Copy active address
+              </MenuItem>
+              <MenuItem onClick={() => disconnect()}>
+                <LogOut /> Disconnect
+              </MenuItem>
+            </>
+          ) : (
+            <MenuItem onClick={() => openConnectModal?.()}>
+              <Plus /> Connect wallet
+            </MenuItem>
+          )}
         </MenuContent>
       </Menu>
-      <AddWalletDialog open={adding} onOpenChange={setAdding} />
+      <AddWalletDialog open={addingWallet} onOpenChange={setAddingWallet} />
+      <TrackAddressDialog
+        open={tracking}
+        onOpenChange={setTracking}
+        onAdded={(address) => view(address)}
+      />
     </>
   );
 }
 
 export function WalletButton({ compact = false }: { compact?: boolean }) {
+  const { accounts } = usePortfolioAccounts();
   return (
     <ConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openAccountModal,
-        openChainModal,
-        openConnectModal,
-        mounted,
-      }) => {
+      {({ account, chain, openChainModal, openConnectModal, mounted }) => {
         if (!mounted) {
           return (
             <div className={compact ? "size-8" : "h-11"} aria-hidden="true" />
           );
         }
-        if (!account) {
-          return (
-            <Button
-              variant="primary"
-              size={compact ? "sm" : "default"}
-              onClick={openConnectModal}
-              className={compact ? "" : "w-full"}
-            >
-              <Wallet />
-              {compact ? "Connect" : "Connect wallet"}
-            </Button>
-          );
-        }
-        if (chain?.unsupported) {
+        if (account && chain?.unsupported) {
           return (
             <Button
               variant="outline"
@@ -233,11 +273,25 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
             </Button>
           );
         }
+        if (accounts.length === 0) {
+          return (
+            <Button
+              variant="primary"
+              size={compact ? "sm" : "default"}
+              onClick={openConnectModal}
+              className={compact ? "" : "w-full"}
+            >
+              <Wallet />
+              {compact ? "Connect" : "Connect wallet"}
+            </Button>
+          );
+        }
         return (
-          <Connected
-            address={account.address}
-            openAccountModal={openAccountModal}
+          <PortfolioSwitcher
+            accounts={accounts}
             compact={compact}
+            connected={Boolean(account)}
+            openConnectModal={openConnectModal}
           />
         );
       }}
