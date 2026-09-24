@@ -15,7 +15,7 @@ import { Avatar, Identity, useIdentity } from "@/components/identity";
 import { Card, EmptyState } from "@/components/page";
 import { useStaking } from "@/components/staking/staking";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Menu,
   MenuContent,
@@ -370,5 +370,213 @@ export function Positions({
         </table>
       </Card>
     </>
+  );
+}
+
+/** Orchestrator name on one line, its terms free to wrap underneath. */
+function OrchestratorHeader({
+  address,
+  terms,
+}: {
+  address: string;
+  terms: string[];
+}) {
+  const { name, avatar, display } = useIdentity(address);
+  return (
+    <Link
+      href={`/orchestrators/${address}`}
+      className="group flex min-w-0 items-center gap-3 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-green-bright/40"
+    >
+      <Avatar address={address} src={avatar} size={40} />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span
+          title={address}
+          className={cn(
+            "truncate text-[15px] text-foreground group-hover:underline",
+            !name && "font-mono text-[14px]"
+          )}
+          style={{ textUnderlineOffset: 4 }}
+        >
+          {display}
+        </span>
+        {terms.length > 0 && (
+          <span className="text-ui-caption text-muted-foreground">
+            {terms.join(" · ")}
+          </span>
+        )}
+      </span>
+    </Link>
+  );
+}
+
+function Figure({
+  label,
+  children,
+  action,
+}: {
+  label: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <dt className="text-ui-caption text-muted-foreground">{label}</dt>
+      <dd className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="truncate font-mono text-[15px] tabular-nums">
+          {children}
+        </span>
+        {action}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * One account's delegation. An account delegates to exactly one
+ * orchestrator, so a single account gets this card rather than a table:
+ * the orchestrator up top, the figures beneath, actions inline.
+ */
+export function DelegationCard({
+  position: p,
+  orchestrator: o,
+  canManage,
+}: {
+  position: Position;
+  orchestrator: Orchestrator | undefined;
+  canManage: boolean;
+}) {
+  const { open } = useStaking();
+  const account = p.account.address;
+
+  if (!p.delegate) {
+    return (
+      <Card>
+        <EmptyState
+          title="Not delegated"
+          description={
+            canManage
+              ? "Delegate LPT to an orchestrator to start earning rewards and fees."
+              : "This account doesn't delegate to an orchestrator right now."
+          }
+          action={
+            canManage ? (
+              <Link
+                href="/orchestrators"
+                className="btn-primary inline-flex h-8 items-center rounded-sm px-3 text-sm font-medium"
+              >
+                Browse orchestrators
+              </Link>
+            ) : undefined
+          }
+        />
+      </Card>
+    );
+  }
+
+  const terms = o
+    ? [
+        `${formatNumber(o.rewardCut, { decimals: 0 })}% reward cut`,
+        `${formatNumber(o.feeShare, { decimals: 0 })}% fee share`,
+        `${o.rewardCalls}/${o.rewardWindow} reward calls`,
+      ]
+    : [];
+
+  return (
+    <Card className="flex flex-col">
+      <div className="flex items-start justify-between gap-4 p-5">
+        <OrchestratorHeader address={p.delegate} terms={terms} />
+        <div className="flex shrink-0 items-center gap-3">
+          {!canManage && (
+            <Tooltip content="Connect this wallet once to manage it here.">
+              <span className="hidden items-center gap-1.5 text-ui-caption text-muted-foreground sm:inline-flex">
+                <Eye className="size-3.5" /> Read-only
+              </span>
+            </Tooltip>
+          )}
+          <Badge tone={p.active ? "positive" : "warning"}>
+            {p.active ? "Active" : "Inactive"}
+          </Badge>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-hairline p-5 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+        <Figure label="Stake">{formatLPT(p.stake)}</Figure>
+        <Figure label="Rewards · 30 days">
+          <span
+            className={
+              p.rewards30d > 0 ? "text-foreground" : "text-muted-foreground"
+            }
+          >
+            {p.rewards30d > 0 ? "+" : ""}
+            {formatLPT(p.rewards30d)}
+          </span>
+        </Figure>
+        <Figure
+          label="Unclaimed fees"
+          action={
+            canManage && p.fees > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  open({ kind: "withdrawFees", amount: p.fees, account })
+                }
+                className="cursor-pointer text-ui-caption text-green-bright underline-offset-4 hover:underline"
+              >
+                Withdraw
+              </button>
+            ) : undefined
+          }
+        >
+          {p.fees > 0 ? formatETH(p.fees) : "—"}
+        </Figure>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-ui-caption text-muted-foreground">
+            Stake · 30 rounds
+          </span>
+          <Sparkline
+            values={p.trend}
+            color="var(--series-1)"
+            width={140}
+            height={28}
+          />
+        </div>
+      </dl>
+
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-hairline px-5 py-3">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => open({ kind: "delegate", to: p.delegate!, account })}
+          >
+            <Plus /> Delegate more
+          </Button>
+          <Link
+            href="/orchestrators?move=1"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <ArrowRightLeft /> Switch
+            <span className="-ml-1 hidden sm:inline">orchestrator</span>
+          </Link>
+          {p.stake > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={() =>
+                open({
+                  kind: "undelegate",
+                  account,
+                  delegate: p.delegate!,
+                  staked: p.stake,
+                })
+              }
+            >
+              <Minus /> Undelegate
+            </Button>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }

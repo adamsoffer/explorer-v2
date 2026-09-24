@@ -12,7 +12,6 @@ import {
 } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { useStaking } from "@/components/staking/staking";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
@@ -41,9 +40,10 @@ import {
   trailingCommission,
   trailingRoundRate,
 } from "@/lib/portfolio/compute";
+import type { Orchestrator } from "@/lib/subgraph/network";
 
 import { PortfolioHero } from "./hero";
-import { type Position, Positions } from "./positions";
+import { DelegationCard, type Position, Positions } from "./positions";
 import { ScopeBar } from "./scope-bar";
 import {
   type Insight,
@@ -52,6 +52,39 @@ import {
   PendingWithdrawals,
   Projections,
 } from "./side-panels";
+
+/** One account's delegation, including an account with nothing delegated. */
+function SingleDelegation({
+  position,
+  account,
+  orchestrators,
+  canManage,
+}: {
+  position: Position | undefined;
+  account: PortfolioAccount | undefined;
+  orchestrators: Map<string, Orchestrator>;
+  canManage: (address: string) => boolean;
+}) {
+  const p: Position | undefined =
+    position ??
+    (account && {
+      account,
+      delegate: null,
+      stake: 0,
+      fees: 0,
+      rewards30d: 0,
+      trend: [],
+      active: false,
+    });
+  if (!p) return null;
+  return (
+    <DelegationCard
+      position={p}
+      orchestrator={p.delegate ? orchestrators.get(p.delegate) : undefined}
+      canManage={canManage(p.account.address)}
+    />
+  );
+}
 
 export function PortfolioView({
   accounts,
@@ -282,11 +315,6 @@ export function PortfolioView({
   const loading = isLoading || !view;
   const perRound = view ? view.stake * view.rate + view.commission : 0;
   const lpt = prices?.lpt;
-  const multi = accounts.length > 1;
-  // Prefer the active wallet so the header action needs no account switch.
-  const firstManageable =
-    view?.positions.find((p) => p.account.source === "wallet") ??
-    view?.positions.find((p) => canManage(p.account.address));
   const feesToWithdraw = view?.positions
     .filter((p) => canManage(p.account.address) && p.fees > 0)
     .sort((a, b) => b.fees - a.fees)[0];
@@ -422,48 +450,42 @@ export function PortfolioView({
       <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-10 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-10">
           <section>
-            <SectionHeader
-              title="Positions"
-              description={
-                view
-                  ? `${view.positions.length} ${
-                      view.positions.length === 1 ? "position" : "positions"
-                    }${
-                      multi
-                        ? ` across ${scoped.length} ${
-                            scoped.length === 1 ? "account" : "accounts"
-                          }`
-                        : ""
-                    }`
-                  : undefined
-              }
-              action={
-                firstManageable?.delegate ? (
-                  <Button
-                    size="xs"
-                    onClick={() =>
-                      open({
-                        kind: "delegate",
-                        to: firstManageable.delegate!,
-                        account: firstManageable.account.address,
-                      })
-                    }
-                  >
-                    Delegate more
-                  </Button>
-                ) : undefined
-              }
-            />
-            {loading ? (
-              <Skeleton className="h-40 w-full rounded-md" />
+            {scoped.length === 1 ? (
+              <>
+                <SectionHeader title="Delegation" />
+                {loading ? (
+                  <Skeleton className="h-44 w-full rounded-md" />
+                ) : (
+                  <SingleDelegation
+                    position={view!.positions[0]}
+                    account={accounts.find((a) => a.address === scoped[0])}
+                    orchestrators={orchestrators}
+                    canManage={canManage}
+                  />
+                )}
+              </>
             ) : (
-              <Positions
-                positions={view!.positions}
-                orchestrators={orchestrators}
-                total={view!.stake}
-                canManage={canManage}
-                showAccount={multi || scoped.length > 1}
-              />
+              <>
+                <SectionHeader
+                  title="Delegations"
+                  description={
+                    view
+                      ? `${view.positions.length} across ${scoped.length} wallets`
+                      : undefined
+                  }
+                />
+                {loading ? (
+                  <Skeleton className="h-40 w-full rounded-md" />
+                ) : (
+                  <Positions
+                    positions={view!.positions}
+                    orchestrators={orchestrators}
+                    total={view!.stake}
+                    canManage={canManage}
+                    showAccount
+                  />
+                )}
+              </>
             )}
           </section>
 
