@@ -252,6 +252,7 @@ const resolvers = {
     })),
   }),
 
+  IndexedBlock: () => ({ _meta: { block: { number: 2 ** 31 } } }),
   Protocol: () => {
     const cur = f.roundByNum.get(f.protocol.currentRound);
     const rest = { ...f.protocol };

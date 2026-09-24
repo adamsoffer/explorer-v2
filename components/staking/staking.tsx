@@ -46,6 +46,7 @@ import {
 import { useOrchestrators, useProtocol } from "@/lib/hooks/queries";
 import { useProtocolContract } from "@/lib/staking/contracts";
 import { bondHints, EMPTY_HINT, simulateHint } from "@/lib/staking/hints";
+import { refreshWhenIndexed } from "@/lib/subgraph/sync";
 
 /* ── Action model ────────────────────────────────────────────────────────── */
 
@@ -120,6 +121,7 @@ function useTx(onConfirmed: () => void) {
     busy: signing || (Boolean(hash) && receipt.isLoading),
     stage: signing ? "sign" : hash && receipt.isLoading ? "confirm" : null,
     confirmed: receipt.isSuccess,
+    block: receipt.data?.blockNumber,
   };
 }
 
@@ -345,11 +347,9 @@ function StakingFlow({
     pendingStakeWei != null ? fromWei(pendingStakeWei as bigint) : 0;
   const balance = balanceWei != null ? fromWei(balanceWei as bigint) : 0;
 
+  // On-chain reads refresh straight away; subgraph data waits for indexing
+  // (see the confirmation effect below).
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    queryClient.invalidateQueries({ queryKey: ["account-events"] });
-    queryClient.invalidateQueries({ queryKey: ["orchestrators"] });
-    queryClient.invalidateQueries({ queryKey: ["orchestrator"] });
     refetchBalance();
     refetchAllowance();
   };
@@ -663,9 +663,30 @@ function StakingFlow({
   useEffect(() => {
     if (!tx.confirmed || !tx.hash) return;
     const h = tx.hash;
-    toast.success(successTitle, {
-      action: { label: "View", onClick: () => window.open(txUrl(h), "_blank") },
+    const view = {
+      label: "View",
+      onClick: () => window.open(txUrl(h), "_blank"),
+    };
+    // One toast for the whole lifecycle: confirmed on-chain, then updated
+    // once the subgraph has indexed the block and the views have refetched.
+    const id = toast.loading(`${successTitle} · updating your portfolio…`, {
+      action: view,
     });
+    refreshWhenIndexed(queryClient, tx.block, [
+      ["portfolio"],
+      ["account-events"],
+      ["orchestrators"],
+      ["orchestrator"],
+      ["events"],
+    ]).then((indexed) =>
+      toast.success(successTitle, {
+        id,
+        action: view,
+        description: indexed
+          ? undefined
+          : "Still indexing. Figures will catch up shortly.",
+      })
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tx.confirmed]);
 
@@ -684,8 +705,8 @@ function StakingFlow({
               <Check className="size-6" />
             </span>
             <p className="text-ui-body text-muted-foreground">
-              Your portfolio will reflect this once the subgraph indexes the
-              block, usually within a minute.
+              Your portfolio updates automatically as soon as the network data
+              catches up, usually within a few seconds.
             </p>
             {tx.hash && (
               <a

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { poll as pollAbi } from "@/lib/abis/Poll";
 import { cn } from "@/lib/cn";
 import { L2_CHAIN, txUrl } from "@/lib/config";
+import { refreshWhenIndexed } from "@/lib/subgraph/sync";
 
 type Hash = `0x${string}`;
 
@@ -64,11 +65,25 @@ export function VoteForm({
   useEffect(() => {
     if (!receipt.isSuccess || !hash) return;
     const h = hash;
-    toast.success(successTitle, {
-      description: "Tallies update once the subgraph indexes the block.",
-      action: { label: "View", onClick: () => window.open(txUrl(h), "_blank") },
+    const view = {
+      label: "View",
+      onClick: () => window.open(txUrl(h), "_blank"),
+    };
+    const id = toast.loading(`${successTitle} · updating tallies…`, {
+      action: view,
     });
-    queryClient.invalidateQueries({ queryKey: ["governance"] });
+    refreshWhenIndexed(queryClient, receipt.data?.blockNumber, [
+      ["governance"],
+      ["events"],
+    ]).then((indexed) =>
+      toast.success(successTitle, {
+        id,
+        action: view,
+        description: indexed
+          ? undefined
+          : "Still indexing. Tallies will catch up shortly.",
+      })
+    );
     onConfirmed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess]);
