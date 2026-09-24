@@ -223,8 +223,8 @@ export function CommandSearch({
       onOpenChange={(o) => (o ? onOpenChange(true) : close())}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-[140] bg-overlay backdrop-blur-[2px] data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0" />
-        <DialogPrimitive.Popup className="fixed top-[12vh] left-1/2 z-[140] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 overflow-hidden rounded-xl border border-hairline bg-popover shadow-(--shadow-popover) outline-none duration-150 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98]">
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-[140] bg-overlay backdrop-blur-[2px] transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0" />
+        <DialogPrimitive.Popup className="fixed top-[12vh] left-1/2 z-[140] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 overflow-hidden rounded-xl border border-hairline bg-popover shadow-(--shadow-popover) outline-none transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-[0.98] data-starting-style:opacity-0 data-ending-style:scale-[0.98] data-ending-style:opacity-0">
           <DialogPrimitive.Title className="sr-only">
             Search
           </DialogPrimitive.Title>

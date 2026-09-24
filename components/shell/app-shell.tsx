@@ -243,8 +243,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-overlay data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0 lg:hidden" />
-          <DialogPrimitive.Popup className="fixed inset-y-0 left-0 z-50 w-[284px] max-w-[85vw] border-r border-hairline bg-background outline-none duration-300 ease-(--ease-spring) data-closed:animate-out data-closed:slide-out-to-left data-open:animate-in data-open:slide-in-from-left lg:hidden">
+          <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-overlay transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0 lg:hidden" />
+          <DialogPrimitive.Popup className="fixed inset-y-0 left-0 z-50 w-[284px] max-w-[85vw] border-r border-hairline bg-background outline-none transition-transform duration-300 ease-(--ease-out) data-starting-style:-translate-x-full data-ending-style:-translate-x-full lg:hidden">
             <DialogPrimitive.Title className="sr-only">
               Navigation
             </DialogPrimitive.Title>

@@ -118,7 +118,7 @@ export function MenuContent({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "min-w-44 origin-(--transform-origin) rounded-xl border border-hairline bg-popover p-1 text-sm shadow-(--shadow-popover) outline-none data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95",
+            "min-w-44 origin-(--transform-origin) rounded-xl border border-hairline bg-popover p-1 text-sm shadow-(--shadow-popover) outline-none transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
             className
           )}
         >

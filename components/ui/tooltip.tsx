@@ -37,7 +37,7 @@ function Tooltip({
         >
           <TooltipPrimitive.Popup
             className={cn(
-              "max-w-xs origin-(--transform-origin) rounded-sm bg-foreground px-2.5 py-1.5 text-xs leading-snug text-background data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95",
+              "max-w-xs origin-(--transform-origin) rounded-sm bg-foreground px-2.5 py-1.5 text-xs leading-snug text-background transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
               className
             )}
           >

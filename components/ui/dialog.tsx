@@ -23,12 +23,12 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & { showClose?: boolean }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-overlay backdrop-blur-[2px] data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0" />
+      <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-overlay backdrop-blur-[2px] transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0" />
       <DialogPrimitive.Popup
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col overflow-y-auto rounded-t-xl border border-hairline bg-popover text-sm text-popover-foreground shadow-(--shadow-popover) outline-none",
           "sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-full sm:max-w-[440px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl",
-          "duration-200 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-4 data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-4 sm:data-closed:zoom-out-95 sm:data-open:zoom-in-95",
+          "transition-[opacity,translate,scale] duration-200 ease-(--ease-out) data-starting-style:opacity-0 data-ending-style:opacity-0 max-sm:data-starting-style:translate-y-4 max-sm:data-ending-style:translate-y-4 sm:data-starting-style:scale-95 sm:data-ending-style:scale-95",
           className
         )}
         {...props}
