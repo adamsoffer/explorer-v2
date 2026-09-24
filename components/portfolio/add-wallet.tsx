@@ -16,11 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { shortAddress } from "@/lib/format";
+import {
+  openAccountPicker,
+  PickerDismissedError,
+} from "@/lib/hooks/account-picker";
 import { useKnownWallets } from "@/lib/hooks/watchlist";
-
-type Eip1193 = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-};
 
 function Option({
   icon,
@@ -101,23 +101,11 @@ export function AddWalletDialog({
   const chooseAccount = async () => {
     setPicking(true);
     try {
-      const provider = (await connector?.getProvider()) as Eip1193 | undefined;
-      if (!provider?.request) throw new Error("unsupported");
-      // Opens the wallet's own account picker (MetaMask, Rabby, …).
-      await provider.request({
-        method: "wallet_requestPermissions",
-        params: [{ eth_accounts: {} }],
-      });
       // The picker may leave the active account unchanged when several are
       // chosen, so remember everything the wallet now exposes.
-      const exposed = (await provider.request({ method: "eth_accounts" })) as
-        | string[]
-        | undefined;
-      for (const addr of exposed ?? []) add(addr);
+      for (const addr of await openAccountPicker(connector)) add(addr);
     } catch (e) {
-      const code = (e as { code?: number })?.code;
-      // 4001: the user closed the picker. Anything else: not supported.
-      if (code !== 4001) setManual(true);
+      if (!(e instanceof PickerDismissedError)) setManual(true);
     } finally {
       setPicking(false);
     }

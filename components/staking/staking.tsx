@@ -44,6 +44,7 @@ import {
   shortAddress,
   toWei,
 } from "@/lib/format";
+import { openAccountPicker } from "@/lib/hooks/account-picker";
 import { useOrchestrators, useProtocol } from "@/lib/hooks/queries";
 import { useKnownWallets } from "@/lib/hooks/watchlist";
 import { useProtocolContract } from "@/lib/staking/contracts";
@@ -315,7 +316,7 @@ function AccountGate({
   action: StakingAction;
   onDone: () => void;
 }) {
-  const { address } = useAccount();
+  const { address, connector } = useAccount();
   const active = address?.toLowerCase();
   const target = action.account?.toLowerCase() ?? active;
   const { list } = useKnownWallets();
@@ -362,11 +363,17 @@ function AccountGate({
           </p>
         )}
       </DialogBody>
-      <DialogFooter>
-        <div className="flex w-full items-center justify-center gap-2 text-ui-caption text-muted-foreground sm:justify-end">
+      <DialogFooter className="items-center sm:justify-between">
+        <div className="flex items-center justify-center gap-2 text-ui-caption text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           Waiting for your wallet…
         </div>
+        <Button
+          variant="primary"
+          onClick={() => openAccountPicker(connector).catch(() => {})}
+        >
+          Open wallet
+        </Button>
       </DialogFooter>
     </>
   );
