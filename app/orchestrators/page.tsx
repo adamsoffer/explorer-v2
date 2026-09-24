@@ -38,8 +38,8 @@ type SortKey =
   | "fees"
   | "delegators";
 
-const NO_MISSED_HINT =
-  "Only orchestrators that called reward in every completed round they were active over the last 30 (30/30 in Reward calls). A missed call means its delegators earn no inflation rewards that round. It doesn't measure transcoding performance or fees.";
+const RELIABLE_HINT =
+  "Reliable orchestrators called reward in every completed round they were active over the last 30 (30/30 in Reward calls). A missed call means its delegators earn no inflation rewards that round. It doesn't measure transcoding performance or fees.";
 
 const SORTS: Record<SortKey, (o: Orchestrator) => number> = {
   stake: (o) => o.totalStake,
@@ -172,7 +172,7 @@ function OrchestratorTable() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("stake");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
-  const [filter, setFilter] = useState<"all" | "no-missed">("all");
+  const [filter, setFilter] = useState<"all" | "reliable">("all");
   const [amount, setAmount] = useState("1000");
 
   const rows = useMemo(() => {
@@ -252,13 +252,13 @@ function OrchestratorTable() {
             onChange={setFilter}
             options={[
               { value: "all", label: "All active" },
-              { value: "no-missed", label: "No missed rewards" },
+              { value: "reliable", label: "Reliable only" },
             ]}
           />
-          <Tooltip content={NO_MISSED_HINT}>
+          <Tooltip content={RELIABLE_HINT}>
             <button
               type="button"
-              aria-label="What does No missed rewards mean?"
+              aria-label="What does Reliable mean?"
               className="-ml-1.5 inline-flex size-7 cursor-help items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-green-bright/40"
             >
               <Info className="size-3.5" />
@@ -267,7 +267,7 @@ function OrchestratorTable() {
         </div>
       </div>
 
-      {filter === "no-missed" && data && (
+      {filter === "reliable" && data && (
         <p className="mb-3 text-ui-caption text-muted-foreground">
           {rows.length} of {data.length} orchestrators called reward in every
           round they were active over the last 30 completed rounds. Each missed
