@@ -197,13 +197,13 @@ function OrchestratorTable() {
         <div className="mb-6 flex items-center gap-3 rounded-md border border-hairline bg-surface px-4 py-3">
           <ArrowRightLeft className="size-4 text-muted-foreground" />
           <p className="flex-1 text-ui-body text-muted-foreground">
-            Choose the orchestrator to move your stake to. Your full position
-            moves in one transaction.
+            Choose the orchestrator to switch to. Your full stake moves in one
+            transaction.
           </p>
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Cancel move"
+            aria-label="Cancel switch"
             onClick={() => router.replace("/orchestrators")}
           >
             <X />
@@ -269,7 +269,7 @@ function OrchestratorTable() {
                     size="xs"
                     onClick={() => open({ kind: "delegate", to: o.id })}
                   >
-                    {moving ? "Move here" : "Delegate"}
+                    {moving ? "Switch here" : "Delegate"}
                   </Button>
                 </div>
                 <dl className="grid grid-cols-3 gap-3 pl-9">
@@ -458,7 +458,7 @@ function OrchestratorTable() {
                           )}
                           onClick={() => open({ kind: "delegate", to: o.id })}
                         >
-                          {moving ? "Move here" : "Delegate"}
+                          {moving ? "Switch here" : "Delegate"}
                         </Button>
                       </td>
                     </tr>

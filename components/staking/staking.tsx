@@ -53,9 +53,18 @@ import { refreshWhenIndexed } from "@/lib/subgraph/sync";
 
 /* ── Action model ────────────────────────────────────────────────────────── */
 
+/*
+ * Wording, used everywhere in the UI:
+ * - Delegators "delegate" their stake. Actions are Delegate, Delegate more,
+ *   Switch orchestrator, Undelegate, Redelegate (put undelegating LPT back)
+ *   and Withdraw. Orchestrators "stake" (self-stake).
+ * - "Stake" is the noun for the amount: your stake, total stake.
+ * - Contract terms (bond, unbond, rebond, transcoder) stay out of the UI.
+ */
+
 export type StakingAction = (
   | { kind: "delegate"; to: string }
-  | { kind: "unstake"; delegate: string; staked: number }
+  | { kind: "undelegate"; delegate: string; staked: number }
   | { kind: "withdrawStake"; lockId: number; amount: number }
   | { kind: "rebond"; lockId: number; amount: number; delegate: string }
   | { kind: "withdrawFees"; amount: number }
@@ -494,31 +503,35 @@ function StakingFlow({
         currentDelegate !== "0x0000000000000000000000000000000000000000" &&
         currentDelegate.toLowerCase() !== to;
       const adding = currentDelegate?.toLowerCase() === to;
-      title = moving ? "Move stake" : adding ? "Stake more" : "Delegate";
+      title = moving
+        ? "Switch orchestrator"
+        : adding
+        ? "Delegate more"
+        : "Delegate";
       description = moving
-        ? "Bonding to a new orchestrator moves your entire existing stake with it. Add LPT to top up in the same transaction."
-        : "Delegated LPT earns inflationary rewards and a share of fees each round. You can unstake any time; it takes " +
+        ? "Switching moves your entire stake to the new orchestrator. Add LPT to delegate more in the same transaction."
+        : "Delegated LPT earns inflationary rewards and a share of fees each round. You can undelegate any time; it takes " +
           unbondingTime +
           " to unlock.";
       steps = approvalFlow
         ? [
             { key: "approve", label: "Approve LPT" },
-            { key: "bond", label: moving ? "Move" : "Delegate" },
+            { key: "bond", label: moving ? "Switch" : "Delegate" },
           ]
-        : [{ key: "bond", label: moving ? "Move" : "Delegate" }];
+        : [{ key: "bond", label: moving ? "Switch" : "Delegate" }];
       cta = needsApproval
         ? "Approve LPT"
         : moving
         ? amountWei > 0n
-          ? "Move and stake"
-          : "Move stake"
+          ? "Switch and delegate"
+          : "Switch orchestrator"
         : "Delegate";
       canRun =
         canRun &&
         Boolean(token) &&
         (amountWei > 0n || Boolean(moving)) &&
         Number(amount || 0) <= balance;
-      successTitle = moving ? "Stake moved" : "Delegation confirmed";
+      successTitle = moving ? "Orchestrator switched" : "Delegated";
       const orch = orchestrators?.find((o) => o.id === to);
       body = (
         <>
@@ -576,7 +589,7 @@ function StakingFlow({
                   )}
                 </Row>
               )}
-            <Row label="Unbonding period">{unbondingTime}</Row>
+            <Row label="Unlock period">{unbondingTime}</Row>
           </div>
           {orch && orch.rewardCalls < orch.rewardWindow - 2 && (
             <Notice tone="warning">
@@ -619,13 +632,13 @@ function StakingFlow({
       };
       break;
     }
-    case "unstake": {
-      title = "Unstake";
-      description = `Unstaked LPT stops earning immediately and unlocks after ${unbondingTime}. You can restake it any time before withdrawing.`;
-      cta = "Unstake";
+    case "undelegate": {
+      title = "Undelegate";
+      description = `Undelegated LPT stops earning immediately and unlocks after ${unbondingTime}. You can redelegate it any time before withdrawing.`;
+      cta = "Undelegate";
       const max = bonded || action.staked;
       canRun = canRun && amountWei > 0n && Number(amount) <= max + 1e-9;
-      successTitle = "Unstaking started";
+      successTitle = "Undelegation started";
       body = (
         <>
           <div className="rounded-lg border border-hairline p-3">
@@ -640,7 +653,7 @@ function StakingFlow({
             value={amount}
             onChange={setAmount}
             max={max}
-            maxLabel="Staked"
+            maxLabel="Delegated"
           />
           <Row label="Available to withdraw">
             {protocol
@@ -686,11 +699,11 @@ function StakingFlow({
     }
     case "rebond": {
       const unbondedNow = !currentDelegate || /^0x0+$/.test(currentDelegate);
-      title = "Restake";
+      title = "Redelegate";
       description =
-        "Put unbonding LPT back to work with the orchestrator it came from. It starts earning again next round.";
-      cta = `Restake ${formatLPT(action.amount)}`;
-      successTitle = "Restaked";
+        "Put undelegating LPT back to work with the orchestrator it came from. It starts earning again next round.";
+      cta = `Redelegate ${formatLPT(action.amount)}`;
+      successTitle = "Redelegated";
       body = (
         <>
           <div className="rounded-lg border border-hairline p-3">

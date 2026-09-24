@@ -64,9 +64,9 @@ function describe(e: ActivityEvent): {
           actor: e.delegator,
           text: (
             <>
-              <Name address={e.delegator} /> moved stake from{" "}
+              <Name address={e.delegator} /> switched from{" "}
               <Name address={e.oldDelegate} /> to <Name address={e.delegate} />
-              {e.amount ? <> and added {formatLPT(e.amount)}</> : null}
+              {e.amount ? <> and delegated {formatLPT(e.amount)} more</> : null}
             </>
           ),
         };
@@ -87,8 +87,8 @@ function describe(e: ActivityEvent): {
         actor: e.delegator,
         text: (
           <>
-            <Name address={e.delegator} /> unstaked {formatLPT(e.amount ?? 0)}{" "}
-            from <Name address={e.delegate} />
+            <Name address={e.delegator} /> undelegated{" "}
+            {formatLPT(e.amount ?? 0)} from <Name address={e.delegate} />
           </>
         ),
       };
@@ -98,8 +98,8 @@ function describe(e: ActivityEvent): {
         actor: e.delegator,
         text: (
           <>
-            <Name address={e.delegator} /> restaked {formatLPT(e.amount ?? 0)}{" "}
-            with <Name address={e.delegate} />
+            <Name address={e.delegator} /> redelegated{" "}
+            {formatLPT(e.amount ?? 0)} to <Name address={e.delegate} />
           </>
         ),
       };

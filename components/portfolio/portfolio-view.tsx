@@ -183,7 +183,7 @@ export function PortfolioView({
               with it isn&apos;t earning.
             </>
           ),
-          detail: "Consider moving to an active orchestrator.",
+          detail: "Consider switching to an active orchestrator.",
         });
         continue;
       }
@@ -268,8 +268,8 @@ export function PortfolioView({
         kind: "withdraw",
         title: (
           <>
-            {formatLPT(total)} has finished unbonding and is ready to withdraw
-            or restake.
+            {formatLPT(total)} has unlocked and is ready to withdraw or
+            redelegate.
           </>
         ),
       });
@@ -449,7 +449,7 @@ export function PortfolioView({
                       })
                     }
                   >
-                    Stake more
+                    Delegate more
                   </Button>
                 ) : undefined
               }
@@ -539,7 +539,7 @@ export function PortfolioView({
                 title="Pending withdrawals"
                 description={`${formatLPT(
                   view.unbonding.reduce((s, l) => s + l.amount, 0)
-                )} unbonding`}
+                )} undelegating`}
               />
               <PendingWithdrawals
                 locks={view.unbonding}

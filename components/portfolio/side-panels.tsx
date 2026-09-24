@@ -76,7 +76,7 @@ export function Projections({
   );
 }
 
-/* ── Unbonding locks ─────────────────────────────────────────────────────── */
+/* ── Undelegating (unbonding locks) ─────────────────────────────────────── */
 
 export function PendingWithdrawals({
   locks,
@@ -151,7 +151,7 @@ export function PendingWithdrawals({
                     })
                   }
                 >
-                  Restake
+                  Redelegate
                 </Button>
               </div>
             )}

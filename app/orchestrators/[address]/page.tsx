@@ -269,9 +269,9 @@ export default function OrchestratorPage() {
   }
 
   const cta = delegatedHere
-    ? "Stake more"
+    ? "Delegate more"
     : delegatedElsewhere
-    ? "Move stake here"
+    ? "Switch orchestrator"
     : "Delegate";
 
   return (
@@ -341,10 +341,10 @@ export default function OrchestratorPage() {
           {delegatedHere && (
             <Button
               onClick={() =>
-                open({ kind: "unstake", delegate: address, staked: myStake })
+                open({ kind: "undelegate", delegate: address, staked: myStake })
               }
             >
-              Unstake
+              Undelegate
             </Button>
           )}
           <Button

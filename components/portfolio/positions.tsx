@@ -116,24 +116,24 @@ function RowActions({
               })
             }
           >
-            <Plus /> Stake more
+            <Plus /> Delegate more
           </MenuItem>
         )}
         <MenuItem render={<Link href="/orchestrators?move=1" />}>
-          <ArrowRightLeft /> Move to another orchestrator
+          <ArrowRightLeft /> Switch orchestrator
         </MenuItem>
         {position.delegate && position.stake > 0 && (
           <MenuItem
             onClick={() =>
               open({
-                kind: "unstake",
+                kind: "undelegate",
                 account: position.account.address,
                 delegate: position.delegate!,
                 staked: position.stake,
               })
             }
           >
-            <Minus /> Unstake
+            <Minus /> Undelegate
           </MenuItem>
         )}
         {position.fees > 0 && (
