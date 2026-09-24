@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 import { useConfig } from "wagmi";
 import { getEnsNameQueryOptions } from "wagmi/query";
 
-import { Identity } from "@/components/identity";
+import { Identity, useIdentity } from "@/components/identity";
 import { Card, EmptyState, ErrorNotice } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { Button } from "@/components/ui/button";
@@ -22,12 +22,41 @@ import { Input, Segmented, Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/cn";
 import { L1_CHAIN, txUrl } from "@/lib/config";
 import { formatLPT, formatPercent, formatRelativeTime } from "@/lib/format";
-import type { Orchestrator } from "@/lib/subgraph/network";
-import type { CastVote, VoteChoice } from "@/lib/subgraph/votes";
+import { useElectorate, useOrchestrators } from "@/lib/hooks/queries";
+import type { CastVote, Electorate, VoteChoice } from "@/lib/subgraph/votes";
 
 import type { TallySeries } from "./tally";
 
 const PAGE = 25;
+
+/**
+ * The active set a vote is measured against. `at` names the snapshot round
+ * (or the L1 block a poll ended at); null means the vote is measured against
+ * today's set. Falls back to today's set, flagged, if the round isn't indexed.
+ */
+export function useVoteElectorate(
+  at: { round?: number; block?: number } | null
+): Electorate | undefined {
+  const snapshot = useElectorate(at);
+  const orchestrators = useOrchestrators();
+  const today = useMemo<Electorate | undefined>(
+    () =>
+      orchestrators.data
+        ? {
+            round: null,
+            orchestrators: orchestrators.data
+              .filter((o) => o.active)
+              .map((o) => ({ id: o.id, totalStake: o.totalStake }))
+              .sort((a, b) => b.totalStake - a.totalStake),
+          }
+        : undefined,
+    [orchestrators.data]
+  );
+  if (!at) return today;
+  if (snapshot.data) return snapshot.data;
+  if (snapshot.isPending) return undefined;
+  return today && { ...today, fallback: true };
+}
 
 type List = "voted" | "not-voted";
 type SortKey = "weight" | "choice" | "time";
@@ -159,9 +188,10 @@ function OverridesToggle({
       type="button"
       aria-expanded={open}
       onClick={onToggle}
+      title="Delegators who voted their own stake instead of leaving it to this orchestrator"
       className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-sm text-[11px] whitespace-nowrap text-warm hover:underline"
     >
-      {count} override{count === 1 ? "" : "s"}
+      {count} voted separately
       <ChevronDown
         className={cn("size-3 transition-transform", open && "rotate-180")}
       />
@@ -174,10 +204,13 @@ function OverrideRows({
   votes,
   series,
   nowMs,
+  orchestratorChoice,
 }: {
   votes: CastVote[];
   series: TallySeries[];
   nowMs: number;
+  /** The orchestrator's own vote, when it voted. */
+  orchestratorChoice?: VoteChoice;
 }) {
   return (
     <ul className="col-span-full -mx-4 mt-2 border-t border-hairline bg-foreground/[0.025]">
@@ -186,7 +219,17 @@ function OverrideRows({
           key={v.voter}
           className={cn(VOTED_GRID, "py-2 pl-10 text-ui-caption")}
         >
-          <Identity address={v.voter} size={20} secondary="Delegator" />
+          <Identity
+            address={v.voter}
+            size={20}
+            secondary={
+              orchestratorChoice && v.choice !== orchestratorChoice ? (
+                <span className="text-warm">Delegator · voted differently</span>
+              ) : (
+                "Delegator"
+              )
+            }
+          />
           <span className="justify-self-end sm:justify-self-start">
             <ChoiceLabel choice={v.choice} series={series} />
           </span>
@@ -200,6 +243,12 @@ function OverrideRows({
       ))}
     </ul>
   );
+}
+
+/** "Delegates to vitalik.eth": which orchestrator's vote a delegator replaced. */
+function DelegatesTo({ address }: { address: string }) {
+  const { display } = useIdentity(address);
+  return <>Delegator · via {display}</>;
 }
 
 function SortHeader({
@@ -266,16 +315,15 @@ export function VotesPanel({
   error,
   onRetry,
   series,
-  orchestrators,
-  ended,
+  electorate,
 }: {
   votes: CastVote[] | undefined;
   isLoading: boolean;
   error: unknown;
   onRetry: () => void;
   series: TallySeries[];
-  orchestrators: Orchestrator[] | undefined;
-  ended: boolean;
+  /** Active set and stake the vote is measured against. */
+  electorate: Electorate | undefined;
 }) {
   const nowMs = useNow(60_000);
   const [list, setList] = useState<List>("voted");
@@ -285,13 +333,8 @@ export function VotesPanel({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const all = useMemo(() => votes ?? [], [votes]);
-  const active = useMemo(
-    () =>
-      (orchestrators ?? [])
-        .filter((o) => o.active)
-        .sort((a, b) => b.totalStake - a.totalStake),
-    [orchestrators]
-  );
+  const [choice, setChoice] = useState<VoteChoice | null>(null);
+  const active = useMemo(() => electorate?.orchestrators ?? [], [electorate]);
   const voterIds = useMemo(() => new Set(all.map((v) => v.voter)), [all]);
   const nonVoters = useMemo(
     () => active.filter((o) => !voterIds.has(o.id)),
@@ -327,7 +370,7 @@ export function VotesPanel({
       ? v.timestamp ?? 0
       : series.findIndex((s) => s.key === v.choice);
   const shownVotes = all
-    .filter((v) => matches(v.voter))
+    .filter((v) => matches(v.voter) && (!choice || v.choice === choice))
     .sort((a, b) => {
       const d = rank(a) - rank(b) || a.weight - b.weight;
       return sort.dir === "asc" ? d : -d;
@@ -378,7 +421,7 @@ export function VotesPanel({
             {
               value: "not-voted",
               label: `Didn't vote${
-                votes && orchestrators ? ` · ${nonVoters.length}` : ""
+                votes && electorate ? ` · ${nonVoters.length}` : ""
               }`,
             },
           ]}
@@ -399,29 +442,47 @@ export function VotesPanel({
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-caption text-muted-foreground">
           {list === "voted" ? (
             <>
-              {counts.map((s) => (
-                <span key={s.key} className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ background: s.color }}
-                  />
-                  {s.n.toLocaleString()} {s.label}
-                </span>
-              ))}
-              {orchestrators && active.length > 0 && (
+              {counts.map((s) => {
+                const on = choice === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    aria-pressed={on}
+                    title={on ? "Show all votes" : `Only show ${s.label}`}
+                    onClick={() => setChoice(on ? null : (s.key as VoteChoice))}
+                    className={cn(
+                      "-mx-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-0.5 transition-colors hover:bg-hover hover:text-foreground",
+                      on && "bg-active text-foreground",
+                      choice && !on && "opacity-50"
+                    )}
+                  >
+                    <span
+                      className="size-2 rounded-full"
+                      style={{ background: s.color }}
+                    />
+                    {s.n.toLocaleString()} {s.label}
+                  </button>
+                );
+              })}
+              {electorate && active.length > 0 && (
                 <span>
                   {active.length - nonVoters.length} of {active.length} active
                   orchestrators voted
                 </span>
               )}
             </>
-          ) : orchestrators ? (
+          ) : electorate ? (
             <span>
               {formatLPT(missingStake, { compact: true })} (
               {pct(activeStake > 0 ? (missingStake / activeStake) * 100 : 0)} of
               active stake) is with orchestrators who haven&apos;t voted. Their
               delegators&apos; stake only counts if they vote themselves.
-              {ended && " Based on today's active set and stake."}
+              {electorate.round != null
+                ? ` Active set and stake as of round ${electorate.round.toLocaleString()}.`
+                : electorate.fallback
+                ? " Based on today's active set and stake; this vote's round isn't indexed yet."
+                : ""}
             </span>
           ) : null}
         </p>
@@ -446,7 +507,7 @@ export function VotesPanel({
             description="Votes appear here as soon as they're indexed."
           />
         </Card>
-      ) : list === "not-voted" && !orchestrators ? (
+      ) : list === "not-voted" && !electorate ? (
         <Card className="h-40" />
       ) : list === "not-voted" && nonVoters.length === 0 ? (
         <Card>
@@ -511,7 +572,15 @@ export function VotesPanel({
                           : `/accounts/${v.voter}`
                       }
                       size={24}
-                      secondary={v.orchestrator ? "Orchestrator" : "Delegator"}
+                      secondary={
+                        v.orchestrator ? (
+                          "Orchestrator"
+                        ) : v.delegate ? (
+                          <DelegatesTo address={v.delegate} />
+                        ) : (
+                          "Delegator"
+                        )
+                      }
                     />
                     {own.length > 0 && (
                       <OverridesToggle
@@ -542,7 +611,12 @@ export function VotesPanel({
                   </span>
                   {v.reason && <Reason text={v.reason} />}
                   {open && (
-                    <OverrideRows votes={own} series={series} nowMs={nowMs} />
+                    <OverrideRows
+                      votes={own}
+                      series={series}
+                      nowMs={nowMs}
+                      orchestratorChoice={v.choice}
+                    />
                   )}
                 </li>
               );

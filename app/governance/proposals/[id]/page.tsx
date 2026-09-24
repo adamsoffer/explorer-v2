@@ -35,7 +35,7 @@ import {
   TallyBar,
   TallyLegend,
 } from "@/components/governance/tally";
-import { VotesPanel } from "@/components/governance/votes";
+import { useVoteElectorate, VotesPanel } from "@/components/governance/votes";
 import { CopyButton, Identity } from "@/components/identity";
 import { Card, EmptyState, ErrorNotice, Page } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
@@ -44,7 +44,6 @@ import { StatusDot } from "@/components/ui/misc";
 import { formatLPT, shortAddress } from "@/lib/format";
 import {
   useGovernance,
-  useOrchestrators,
   useProposalVotes,
   useProtocol,
 } from "@/lib/hooks/queries";
@@ -70,7 +69,14 @@ export default function ProposalPage() {
   const chainState = useProposalState(proposal);
   const [tab, setTab] = useDetailTab(TABS, "description");
   const votes = useProposalVotes(proposal ? proposal.id : undefined);
-  const orchestrators = useOrchestrators();
+  // Voting power is fixed at the proposal's start round.
+  const electorate = useVoteElectorate(
+    proposal &&
+      protocol.data &&
+      proposal.voteStart <= protocol.data.currentRound
+      ? { round: proposal.voteStart }
+      : null
+  );
 
   if (governance.error || protocol.error) {
     return (
@@ -235,8 +241,7 @@ export default function ProposalPage() {
                 error={votes.error}
                 onRetry={() => votes.refetch()}
                 series={series}
-                orchestrators={orchestrators.data}
-                ended={phase === "ended"}
+                electorate={electorate}
               />
             ) : (
               <Card className="p-5 sm:p-6">

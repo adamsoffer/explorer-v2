@@ -13,7 +13,12 @@ import {
   fetchProtocol,
 } from "@/lib/subgraph/network";
 import { fetchPortfolio } from "@/lib/subgraph/portfolio";
-import { fetchPollVotes, fetchProposalVotes } from "@/lib/subgraph/votes";
+import {
+  fetchElectorate,
+  fetchPollVotes,
+  fetchProposalVotes,
+  fetchRoundAtBlock,
+} from "@/lib/subgraph/votes";
 
 const MINUTE = 60_000;
 
@@ -117,6 +122,25 @@ export function useProposalVotes(proposal: string | undefined) {
     queryFn: () => fetchProposalVotes(proposal!),
     enabled: Boolean(proposal),
     staleTime: MINUTE,
+  });
+}
+
+/**
+ * The active set and stake a vote is measured against: a past round's
+ * (by round, or by the L1 block a poll ended at), or null when no snapshot
+ * applies or the round has no pools indexed.
+ */
+export function useElectorate(at: { round?: number; block?: number } | null) {
+  return useQuery({
+    queryKey: ["electorate", at?.round ?? null, at?.block ?? null],
+    queryFn: async () => {
+      const round =
+        at?.round ??
+        (at?.block != null ? await fetchRoundAtBlock(at.block) : null);
+      return round != null ? fetchElectorate(round) : null;
+    },
+    enabled: at != null,
+    staleTime: 60 * MINUTE,
   });
 }
 

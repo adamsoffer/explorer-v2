@@ -193,3 +193,69 @@ export async function fetchProposalVotes(
     })
     .sort((a, b) => b.weight - a.weight);
 }
+
+/* ── Who could vote: the active set at the vote's snapshot round ─────────── */
+
+export type Electorate = {
+  /** Round the set and stake are from; null means "today". */
+  round: number | null;
+  /** Today's set standing in because the vote's round isn't indexed. */
+  fallback?: boolean;
+  orchestrators: { id: string; totalStake: number }[];
+};
+
+const ROUND_AT_BLOCK = /* GraphQL */ `
+  query RoundAtBlock($block: BigInt!) {
+    rounds(
+      first: 1
+      where: { startBlock_lte: $block }
+      orderBy: startBlock
+      orderDirection: desc
+    ) {
+      id
+    }
+  }
+`;
+
+/** The round an L1 block falls in (poll end blocks are L1 blocks). */
+export async function fetchRoundAtBlock(block: number) {
+  const { rounds } = await querySubgraph<{ rounds: { id: string }[] }>(
+    ROUND_AT_BLOCK,
+    { block: String(block) }
+  );
+  return rounds[0] ? Number(rounds[0].id) : null;
+}
+
+const ROUND_POOLS = /* GraphQL */ `
+  query RoundPools($round: String!) {
+    pools(first: 1000, where: { round: $round, totalStake_gt: "0" }) {
+      delegate {
+        id
+      }
+      totalStake
+    }
+  }
+`;
+
+/**
+ * Orchestrators active in a round, with their stake that round. The
+ * subgraph creates one earnings pool per active orchestrator per round, so
+ * a round's pools are its active set. Null if the round has no pools yet.
+ */
+export async function fetchElectorate(
+  round: number
+): Promise<Electorate | null> {
+  const { pools } = await querySubgraph<{
+    pools: { delegate: { id: string }; totalStake: string }[];
+  }>(ROUND_POOLS, { round: String(round) });
+  if (!pools.length) return null;
+  return {
+    round,
+    orchestrators: pools
+      .map((p) => ({
+        id: p.delegate.id.toLowerCase(),
+        totalStake: Number(p.totalStake),
+      }))
+      .sort((a, b) => b.totalStake - a.totalStake),
+  };
+}

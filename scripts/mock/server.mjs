@@ -438,6 +438,27 @@ const resolvers = {
     };
   },
 
+  RoundAtBlock: ({ block }) => ({
+    rounds: f.rounds
+      .filter((r) => Number(r.startBlock) <= Number(block))
+      .sort((a, b) => Number(b.startBlock) - Number(a.startBlock))
+      .slice(0, 1)
+      .map((r) => ({ id: String(r.id) })),
+  }),
+
+  RoundPools: ({ round }) => ({
+    pools: f.transcoders
+      .filter((t) => t.active)
+      .flatMap((t) => {
+        const p = (f.pools.get(t.id) ?? []).find(
+          (x) => x.round === Number(round)
+        );
+        return p && Number(p.totalStake) > 0
+          ? [{ delegate: { id: t.id }, totalStake: p.totalStake }]
+          : [];
+      }),
+  }),
+
   VoterDelegates: ({ ids }) => ({
     delegators: lower(ids).flatMap((id) => {
       if (transcoderById.has(id)) return [{ id, delegate: { id } }];

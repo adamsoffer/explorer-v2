@@ -32,7 +32,7 @@ import {
   TallyLegend,
 } from "@/components/governance/tally";
 import { PollVoteForm } from "@/components/governance/vote-form";
-import { VotesPanel } from "@/components/governance/votes";
+import { useVoteElectorate, VotesPanel } from "@/components/governance/votes";
 import { CopyButton } from "@/components/identity";
 import { Card, EmptyState, ErrorNotice, Page } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
@@ -41,12 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton, StatusDot } from "@/components/ui/misc";
 import { addressUrl } from "@/lib/config";
 import { formatLPT, formatPercent, shortAddress } from "@/lib/format";
-import {
-  useGovernance,
-  useOrchestrators,
-  usePollVotes,
-  useProtocol,
-} from "@/lib/hooks/queries";
+import { useGovernance, usePollVotes, useProtocol } from "@/lib/hooks/queries";
 
 const TABS = ["proposal", "votes"] as const;
 
@@ -64,7 +59,12 @@ export default function PollPage() {
   const doc = usePollDocument(poll?.proposal);
   const [tab, setTab] = useDetailTab(TABS, "proposal");
   const votes = usePollVotes(poll ? poll.id : undefined);
-  const orchestrators = useOrchestrators();
+  // Ended polls are measured against the active set when they closed.
+  const electorate = useVoteElectorate(
+    poll && pollPhase(poll, l1Block) === "ended"
+      ? { block: poll.endBlock }
+      : null
+  );
 
   if (governance.error) {
     return (
@@ -99,11 +99,17 @@ export default function PollPage() {
   const series = pollSeries(poll);
   const voted = poll.yes + poll.no;
   const yesShare = voted > 0 ? (poll.yes / voted) * 100 : null;
-  // Participation against *current* active stake is only meaningful while open.
+  // Participation against the active stake the poll is measured against:
+  // today's while open, the closing round's once ended.
+  const electorateStake = electorate?.fallback
+    ? null
+    : electorate?.orchestrators.reduce((s, o) => s + o.totalStake, 0) ?? null;
+  const activeStake =
+    phase === "active"
+      ? protocol.data?.totalActiveStake ?? electorateStake
+      : electorateStake;
   const participation =
-    phase === "active" && protocol.data && protocol.data.totalActiveStake > 0
-      ? (voted / protocol.data.totalActiveStake) * 100
-      : null;
+    activeStake && activeStake > 0 ? (voted / activeStake) * 100 : null;
 
   const outcome: Outcome =
     phase === "active"
@@ -179,7 +185,21 @@ export default function PollPage() {
                   {participation != null && (
                     <DetailItem
                       label="Participation"
-                      sub="of current active stake"
+                      sub={
+                        <span
+                          className={
+                            participation >= poll.quorum
+                              ? "text-green-bright"
+                              : undefined
+                          }
+                        >
+                          {participation >= poll.quorum
+                            ? "Quorum reached"
+                            : phase === "active"
+                            ? "Below quorum so far"
+                            : "Quorum not reached"}
+                        </span>
+                      }
                     >
                       {formatPercent(participation, { decimals: 2 })}
                     </DetailItem>
@@ -243,8 +263,7 @@ export default function PollPage() {
                 error={votes.error}
                 onRetry={() => votes.refetch()}
                 series={series}
-                orchestrators={orchestrators.data}
-                ended={phase === "ended"}
+                electorate={electorate}
               />
             ) : (
               <Card className="p-5 sm:p-6">
