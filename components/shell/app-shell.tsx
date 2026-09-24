@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { ExplorerBadge } from "@/components/brand/explorer-badge";
-import { LivepeerLockup } from "@/components/brand/logo";
+import { LivepeerWordmark } from "@/components/brand/logo";
 import { THEME_OPTIONS, useTheme } from "@/components/theme";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -129,7 +129,7 @@ function SidebarBody({
           aria-label="Livepeer Explorer home"
           className="flex items-center gap-2.5 rounded-sm outline-none"
         >
-          <LivepeerLockup className="h-[15px] w-auto text-foreground" />
+          <LivepeerWordmark className="h-[14px] w-auto text-foreground" />
           <ExplorerBadge />
         </Link>
       </div>
@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             aria-label="Livepeer Explorer home"
             className="flex items-center gap-2 outline-none"
           >
-            <LivepeerLockup className="h-[14px] w-auto text-foreground" />
+            <LivepeerWordmark className="h-[13px] w-auto text-foreground" />
             <ExplorerBadge />
           </Link>
           <div className="flex-1" />
