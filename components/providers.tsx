@@ -57,8 +57,12 @@ function makeWagmiConfig() {
     chains: [L2_CHAIN, L1_CHAIN],
     ssr: true,
     transports: {
-      [L2_CHAIN.id]: fallback(RPC_URLS[L2_CHAIN.id].map((u) => http(u))),
-      [L1_CHAIN.id]: fallback(RPC_URLS[L1_CHAIN.id].map((u) => http(u))),
+      [L2_CHAIN.id]: fallback(
+        RPC_URLS[L2_CHAIN.id].map((u) => http(u, { batch: true }))
+      ),
+      [L1_CHAIN.id]: fallback(
+        RPC_URLS[L1_CHAIN.id].map((u) => http(u, { batch: true }))
+      ),
     },
     wallets: [
       {

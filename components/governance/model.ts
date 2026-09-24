@@ -4,9 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { keccak256, toBytes } from "viem";
 import { useBlockNumber, useReadContract } from "wagmi";
 
+import { useNow } from "@/components/shell/round-clock";
 import { controller } from "@/lib/abis/Controller";
 import { CONTRACTS, L1_CHAIN, L2_CHAIN } from "@/lib/config";
 import { formatDate, formatDuration } from "@/lib/format";
+import { useProtocol } from "@/lib/hooks/queries";
 import type { Poll, Protocol, TreasuryProposal } from "@/lib/subgraph/network";
 
 /* ── Documents: front matter + body ──────────────────────────────────────── */
@@ -125,13 +127,33 @@ export const L1_BLOCK_SECONDS = 12;
 
 export type PollPhase = "active" | "ended" | "unknown";
 
-/** Current Ethereum block; polls end at an L1 block number. */
+/**
+ * Current Ethereum block; polls end at an L1 block number. Uses the live
+ * block from an L1 RPC when one answers, otherwise estimates it from the
+ * round clock (rounds are measured in L1 blocks and the subgraph records
+ * each round's start block), so the list never waits on an RPC.
+ */
 export function useL1Block() {
-  const { data, isLoading } = useBlockNumber({
+  const { data } = useBlockNumber({
     chainId: L1_CHAIN.id,
     query: { refetchInterval: 60_000, staleTime: 30_000, retry: 1 },
   });
-  return { block: data != null ? Number(data) : null, isLoading };
+  const { data: protocol, isLoading: protocolLoading } = useProtocol();
+  const nowMs = useNow(30_000);
+  if (data != null) return { block: Number(data), isLoading: false };
+  const current = protocol?.recentRounds.find(
+    (r) => r.round === protocol.currentRound
+  );
+  if (protocol && current) {
+    const elapsed = Math.max(0, nowMs / 1000 - current.ts);
+    return {
+      block: Math.floor(
+        current.startBlock + elapsed / protocol.secondsPerBlock
+      ),
+      isLoading: false,
+    };
+  }
+  return { block: null, isLoading: protocolLoading };
 }
 
 export function pollPhase(p: Poll, l1Block: number | null): PollPhase {

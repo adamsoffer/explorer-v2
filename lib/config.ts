@@ -35,7 +35,9 @@ export const RPC_URLS: Record<number, string[]> = {
   [mainnet.id]: [
     process.env.NEXT_PUBLIC_L1_RPC_URL,
     INFURA_KEY && `https://mainnet.infura.io/v3/${INFURA_KEY}`,
-    "https://cloudflare-eth.com",
+    // Keyless public endpoints; cloudflare-eth.com has been shut down.
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.llamarpc.com",
   ].filter(Boolean) as string[],
 };
 
