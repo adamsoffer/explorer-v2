@@ -37,6 +37,7 @@ import {
   mergeSeries,
   projectEarnings,
   sumSince,
+  trailingCommission,
   trailingRoundRate,
 } from "@/lib/portfolio/compute";
 
@@ -97,6 +98,7 @@ export function PortfolioView({
     const roundSeconds = averageRoundSeconds(data.rounds);
     const rate = trailingRoundRate(series);
     const apr = annualize(rate, roundSeconds);
+    const commission = trailingCommission(series);
     const since30 = nowSec - 30 * 86400;
     const rewards30 = sumSince(series, "rewards", since30);
     const fees30 = sumSince(series, "fees", since30);
@@ -128,6 +130,7 @@ export function PortfolioView({
     return {
       series,
       stake,
+      commission,
       fees,
       roundSeconds,
       rate,
@@ -275,7 +278,7 @@ export function PortfolioView({
   if (error) return <ErrorNotice error={error} onRetry={() => refetch()} />;
 
   const loading = isLoading || !view;
-  const perRound = view ? view.stake * view.rate : 0;
+  const perRound = view ? view.stake * view.rate + view.commission : 0;
   const lpt = prices?.lpt;
   const multi = accounts.length > 1;
   const firstManageable = view?.positions.find((p) =>
@@ -341,7 +344,9 @@ export function PortfolioView({
               )
             }
             sub={
-              view && protocol
+              view && view.commission > 0
+                ? "On your own stake, excluding commission"
+                : view && protocol
                 ? `Inflation ${(protocol.inflation / 1e7).toFixed(
                     4
                   )}% per round`
@@ -469,6 +474,7 @@ export function PortfolioView({
             ) : (
               <Projections
                 apr={view!.apr}
+                commissionPerRound={view!.commission}
                 lptPrice={lpt}
                 rows={[
                   {
@@ -477,7 +483,8 @@ export function PortfolioView({
                       view!.stake,
                       view!.rate,
                       1,
-                      view!.roundSeconds
+                      view!.roundSeconds,
+                      view!.commission
                     ),
                   },
                   {
@@ -486,7 +493,8 @@ export function PortfolioView({
                       view!.stake,
                       view!.rate,
                       7,
-                      view!.roundSeconds
+                      view!.roundSeconds,
+                      view!.commission
                     ),
                   },
                   {
@@ -495,7 +503,8 @@ export function PortfolioView({
                       view!.stake,
                       view!.rate,
                       30,
-                      view!.roundSeconds
+                      view!.roundSeconds,
+                      view!.commission
                     ),
                   },
                   {
@@ -504,7 +513,8 @@ export function PortfolioView({
                       view!.stake,
                       view!.rate,
                       365,
-                      view!.roundSeconds
+                      view!.roundSeconds,
+                      view!.commission
                     ),
                   },
                 ]}

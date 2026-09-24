@@ -28,10 +28,12 @@ import type { UnbondingLock } from "@/lib/subgraph/portfolio";
 export function Projections({
   rows,
   apr,
+  commissionPerRound = 0,
   lptPrice,
 }: {
   rows: { label: string; lpt: number }[];
   apr: number;
+  commissionPerRound?: number;
   lptPrice?: number;
 }) {
   return (
@@ -64,6 +66,10 @@ export function Projections({
       </dl>
       <p className="mt-4 text-[11px] leading-4 text-subtle-foreground">
         Compounded from your realised rewards over the last 30 rounds.
+        {commissionPerRound > 0 &&
+          ` Includes ~${formatLPT(
+            commissionPerRound
+          )} per round of reward-cut commission, projected flat.`}{" "}
         Inflation, reward calls and cuts all move this.
       </p>
     </Card>

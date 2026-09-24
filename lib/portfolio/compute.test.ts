@@ -8,6 +8,7 @@ import {
   PRECISE,
   projectEarnings,
   type RoundPoint,
+  trailingCommission,
   trailingRoundRate,
 } from "./compute";
 
@@ -212,6 +213,10 @@ describe("computeAccount", () => {
     // Round 11: 0.9 on shares + 1 commission. Round 12: 0.9 + 1 + 9·1/1000.
     expect(result.series[1].rewards).toBeCloseTo(1.9, 6);
     expect(result.series[2].rewards).toBeCloseTo(1.909, 6);
+    // Only the reward cut is commission; the 0.009 earned by staked
+    // commission is ordinary yield on stake.
+    expect(result.series[1].commission).toBeCloseTo(1, 6);
+    expect(result.series[2].commission).toBeCloseTo(1, 6);
     expect(result.series[2].stake).toBeCloseTo(101.8 + 2.009, 6);
     expect(result.pendingStake).toBe(lpt(101.8) + lpt(2));
   });
@@ -253,6 +258,7 @@ describe("derived metrics", () => {
       ts: i,
       stake,
       rewards: i === 0 ? 0 : stake - stake / 1.01,
+      commission: 0,
       fees: 0,
       share: null,
     }));
@@ -260,5 +266,26 @@ describe("derived metrics", () => {
     expect(rate).toBeCloseTo(0.01, 9);
     expect(annualize(0.01, 365 * 86400)).toBeCloseTo(1, 9);
     expect(projectEarnings(100, 0.01, 2, 86400)).toBeCloseTo(2.01, 9);
+  });
+
+  it("keeps an orchestrator's commission out of its yield", () => {
+    // A 2 LPT self-bond that earns 0.2% a round on its own stake and 1.5 LPT
+    // a round of reward-cut commission from its delegators.
+    const series = Array.from({ length: 31 }, (_, i) => ({
+      round: i,
+      ts: i,
+      stake: 2,
+      rewards: i === 0 ? 0 : 0.004 + 1.5,
+      commission: i === 0 ? 0 : 1.5,
+      fees: 0,
+      share: null,
+    }));
+    const rate = trailingRoundRate(series);
+    expect(rate).toBeCloseTo(0.002, 9);
+    expect(trailingCommission(series)).toBeCloseTo(1.5, 9);
+    // One year of 1-day rounds: stake compounds, commission accrues flat.
+    const year = projectEarnings(2, rate, 365, 86400, 1.5);
+    expect(year).toBeCloseTo(2 * (Math.pow(1.002, 365) - 1) + 1.5 * 365, 6);
+    expect(annualize(rate, 86400)).toBeLessThan(200);
   });
 });

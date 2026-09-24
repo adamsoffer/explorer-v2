@@ -68,8 +68,14 @@ export type SeriesPoint = {
   ts: number;
   /** LPT */
   stake: number;
-  /** LPT earned this round */
+  /** LPT earned this round (all sources) */
   rewards: number;
+  /**
+   * The part of `rewards` that is reward-cut commission (orchestrators bonded
+   * to themselves). It's income from other people's stake, so it is left out
+   * of yield on the account's own stake.
+   */
+  commission: number;
   /** ETH earned this round */
   fees: number;
   /** % of network active stake */
@@ -177,6 +183,7 @@ export function computeAccount({
     const prev = holdingAt(r - 1);
 
     let rewardWei = 0n;
+    let cutWei = 0n;
     let feeWei = 0n;
 
     if (prev?.delegate && prev.shares > 0n) {
@@ -201,6 +208,7 @@ export function computeAccount({
             : 0n;
         commission += cut + onStaked;
         rewardWei += cut + onStaked;
+        cutWei += cut;
       }
       if (pool && pool.fees > 0n) {
         feeWei += (pool.fees * (PPM - pool.feeShare)) / PPM;
@@ -221,6 +229,7 @@ export function computeAccount({
       ts,
       stake,
       rewards: toFloat(rewardWei),
+      commission: toFloat(cutWei),
       fees: toFloat(feeWei),
       share: totalActiveStake > 0 ? (stake / totalActiveStake) * 100 : null,
     });
@@ -261,6 +270,7 @@ export function mergeSeries(
       if (acc) {
         acc.stake += p.stake;
         acc.rewards += p.rewards;
+        acc.commission += p.commission;
         acc.fees += p.fees;
       } else {
         byRound.set(p.round, { ...p });
@@ -315,8 +325,10 @@ export function averageRoundSeconds(rounds: RoundPoint[], sample = 30) {
 }
 
 /**
- * Realised per-round growth over the trailing window: rewards earned divided
- * by the stake that earned them. Averaging over a window keeps one missed
+ * Realised per-round growth over the trailing window: rewards the stake
+ * earned divided by that stake. Commission is excluded — it comes from other
+ * delegators' stake, and dividing it by an orchestrator's own (often tiny)
+ * bond would report an absurd yield. Averaging over a window keeps one missed
  * reward call from swinging the yield to zero.
  */
 export function trailingRoundRate(series: SeriesPoint[], window = 30) {
@@ -326,10 +338,17 @@ export function trailingRoundRate(series: SeriesPoint[], window = 30) {
   let stake = 0;
   for (let i = 1; i < tail.length; i++) {
     if (tail[i - 1].stake <= 0) continue;
-    rewards += tail[i].rewards;
+    rewards += tail[i].rewards - tail[i].commission;
     stake += tail[i - 1].stake;
   }
-  return stake > 0 ? rewards / stake : 0;
+  return stake > 0 ? Math.max(0, rewards / stake) : 0;
+}
+
+/** Average reward-cut commission per round over the trailing window. */
+export function trailingCommission(series: SeriesPoint[], window = 30) {
+  const tail = series.slice(-window);
+  if (!tail.length) return 0;
+  return tail.reduce((s, p) => s + p.commission, 0) / tail.length;
 }
 
 export function annualize(roundRate: number, roundSeconds: number) {
@@ -338,15 +357,22 @@ export function annualize(roundRate: number, roundSeconds: number) {
   return (Math.pow(1 + roundRate, roundsPerYear) - 1) * 100;
 }
 
+/**
+ * Earnings over `days`: the stake compounds at the realised rate; commission
+ * accrues flat, since it tracks delegators' stake rather than this account's.
+ */
 export function projectEarnings(
   stake: number,
   roundRate: number,
   days: number,
-  roundSeconds: number
+  roundSeconds: number,
+  commissionPerRound = 0
 ) {
-  if (stake <= 0 || roundRate <= 0) return 0;
+  if (roundSeconds <= 0) return 0;
   const n = (days * 86400) / roundSeconds;
-  return stake * (Math.pow(1 + roundRate, n) - 1);
+  const compounded =
+    stake > 0 && roundRate > 0 ? stake * (Math.pow(1 + roundRate, n) - 1) : 0;
+  return compounded + Math.max(0, commissionPerRound) * n;
 }
 
 export function sumSince<K extends "rewards" | "fees">(
