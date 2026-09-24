@@ -65,7 +65,12 @@ export function Onboarding() {
 
   const reliable = (orchestrators ?? [])
     .filter((o) => o.realizedApr != null && o.rewardCalls >= o.rewardWindow - 1)
-    .sort((a, b) => (b.realizedApr ?? 0) - (a.realizedApr ?? 0));
+    .sort(
+      (a, b) =>
+        // Near-equal yields are common; break ties toward more stake.
+        Math.round((b.realizedApr ?? 0) * 10) -
+          Math.round((a.realizedApr ?? 0) * 10) || b.totalStake - a.totalStake
+    );
   const medianApr = reliable.length
     ? reliable[Math.floor(reliable.length / 2)].realizedApr
     : null;

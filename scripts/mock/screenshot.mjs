@@ -143,10 +143,17 @@ async function main() {
             sessionStorage.setItem("__seeded", "1");
           }
         } catch {}
+        // Hide the Next.js dev-tools badge; it overlaps the sidebar footer.
+        document.addEventListener("DOMContentLoaded", () => {
+          const style = document.createElement("style");
+          style.textContent = "nextjs-portal { display: none !important; }";
+          document.head.appendChild(style);
+        });
       },
       { theme: v.theme, watchlist: p.watchlist ? WATCHLIST : null }
     );
 
+    const blockedHosts = new Set();
     const baseHost = new URL(BASE).host;
     const mockHost = new URL(MOCK).host;
     await context.route("**/*", (route) => {
@@ -167,6 +174,7 @@ async function main() {
       ) {
         return route.continue();
       }
+      blockedHosts.add(url.host);
       return route.abort("blockedbyclient");
     });
 
@@ -174,7 +182,11 @@ async function main() {
     const consoleErrors = [];
     const failed = [];
     page.on("console", (msg) => {
-      if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 300));
+      if (msg.type() !== "error") return;
+      const text = msg.text();
+      // Noise from our own external-host block.
+      if (text.includes("ERR_BLOCKED_BY_CLIENT")) return;
+      consoleErrors.push(text.slice(0, 300));
     });
     page.on("pageerror", (err) =>
       consoleErrors.push(`pageerror: ${err.message.slice(0, 300)}`)
@@ -183,6 +195,13 @@ async function main() {
       const url = req.url();
       const reason = req.failure()?.errorText ?? "";
       if (reason.includes("BLOCKED_BY_CLIENT")) return; // our own external-host block
+      // Navigations/prefetches cancelled by the router, not real failures.
+      if (
+        reason.includes("ERR_ABORTED") &&
+        ["HEAD", "GET"].includes(req.method()) &&
+        !url.includes("/graphql")
+      )
+        return;
       failed.push(`${req.method()} ${url.slice(0, 140)} ${reason}`);
     });
     page.on("response", (res) => {
@@ -212,22 +231,23 @@ async function main() {
         const doc = document.documentElement;
         const text = document.body?.innerText ?? "";
         const wide = [];
-        for (const el of document.querySelectorAll("body *")) {
-          const r = el.getBoundingClientRect();
-          if (
-            r.right > doc.clientWidth + 1 &&
-            r.width > 0 &&
-            getComputedStyle(el).position !== "fixed"
-          ) {
-            wide.push(
-              `${el.tagName.toLowerCase()}.${String(el.className)
-                .split(" ")
-                .slice(0, 3)
-                .join(".")} right=${Math.round(r.right)}`
-            );
-            if (wide.length >= 5) break;
+        if (doc.scrollWidth > doc.clientWidth)
+          for (const el of document.querySelectorAll("body *")) {
+            const r = el.getBoundingClientRect();
+            if (
+              r.right > doc.clientWidth + 1 &&
+              r.width > 0 &&
+              getComputedStyle(el).position !== "fixed"
+            ) {
+              wide.push(
+                `${el.tagName.toLowerCase()}.${String(el.className)
+                  .split(" ")
+                  .slice(0, 3)
+                  .join(".")} right=${Math.round(r.right)}`
+              );
+              if (wide.length >= 5) break;
+            }
           }
-        }
         return {
           theme: doc.dataset.theme,
           horizontalOverflow: doc.scrollWidth > doc.clientWidth,
@@ -247,7 +267,17 @@ async function main() {
     await page
       .screenshot({ path: file, fullPage: true })
       .catch((e) => consoleErrors.push(`screenshot: ${e.message}`));
+    // Long pages are unreadable when downscaled: also keep the first screenful.
+    const height = await page
+      .evaluate(() => document.documentElement.scrollHeight)
+      .catch(() => 0);
+    if (height > v.viewport.height * 2.5) {
+      await page
+        .screenshot({ path: file.replace(/\.png$/, ".top.png") })
+        .catch(() => {});
+    }
     report.push({
+      blockedHosts: [...blockedHosts],
       id,
       url: p.path,
       status,
@@ -278,6 +308,8 @@ async function main() {
       console.log(`     console: ${e}`);
     for (const e of failed.slice(0, 6)) console.log(`     request: ${e}`);
     for (const w of probe.wide ?? []) console.log(`     overflow: ${w}`);
+    if (blockedHosts.size)
+      console.log(`     blocked hosts: ${[...blockedHosts].join(", ")}`);
   }
 
   await browser.close();

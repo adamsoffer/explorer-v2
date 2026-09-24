@@ -68,7 +68,7 @@ function RewardStrip({
         </span>
       </div>
       <div
-        className="flex flex-wrap gap-[3px]"
+        className="grid grid-cols-[repeat(30,minmax(0,1fr))] gap-[3px] sm:grid-cols-[repeat(45,minmax(0,1fr))]"
         role="img"
         aria-label={`Reward called in ${called} of the last ${recent.length} rounds`}
       >
@@ -85,7 +85,7 @@ function RewardStrip({
             >
               <span
                 className={cn(
-                  "h-5 w-[7px] rounded-[2px] transition-opacity hover:opacity-70",
+                  "h-5 w-full rounded-[2px] transition-opacity hover:opacity-70",
                   ok ? "bg-foreground/35" : "bg-warm"
                 )}
               />
@@ -106,33 +106,51 @@ function RewardStrip({
 }
 
 function CutHistory({ pools }: { pools: OrchestratorDetail["pools"] }) {
+  // Only real changes: the first pool in the window is a starting point, not
+  // a change.
   const changes: {
     round: number;
     ts: number;
     rewardCut: number;
     feeShare: number;
+    prevCut: number;
+    prevShare: number;
   }[] = [];
-  for (const p of pools) {
-    const last = changes[changes.length - 1];
-    if (
-      !last ||
-      last.rewardCut !== p.rewardCut ||
-      last.feeShare !== p.feeShare
-    ) {
+  for (let i = 1; i < pools.length; i++) {
+    const a = pools[i - 1];
+    const b = pools[i];
+    if (a.rewardCut !== b.rewardCut || a.feeShare !== b.feeShare) {
       changes.push({
-        round: p.round,
-        ts: p.ts,
-        rewardCut: p.rewardCut,
-        feeShare: p.feeShare,
+        round: b.round,
+        ts: b.ts,
+        rewardCut: b.rewardCut,
+        feeShare: b.feeShare,
+        prevCut: a.rewardCut,
+        prevShare: a.feeShare,
       });
     }
   }
-  const rows = changes.reverse().slice(0, 8);
+  const current = pools[pools.length - 1];
+  if (!current) return null;
+  if (!changes.length) {
+    return (
+      <Card className="px-4 py-3.5">
+        <p className="text-ui-body text-muted-foreground">
+          Unchanged since round {pools[0].round.toLocaleString()}
+        </p>
+        <p className="mt-1 font-mono text-[12.5px] tabular-nums">
+          {current.rewardCut.toFixed(1)}% cut · {current.feeShare.toFixed(1)}%
+          fee share
+        </p>
+      </Card>
+    );
+  }
   return (
     <Card className="divide-y divide-(--hairline)">
-      {rows.map((c, i) => {
-        const prev = rows[i + 1];
-        return (
+      {changes
+        .reverse()
+        .slice(0, 8)
+        .map((c) => (
           <div
             key={c.round}
             className="flex items-center justify-between gap-4 px-4 py-3"
@@ -150,29 +168,21 @@ function CutHistory({ pools }: { pools: OrchestratorDetail["pools"] }) {
               </span>
             </div>
             <div className="flex flex-col items-end font-mono text-[12.5px] tabular-nums">
-              <span>
-                {c.rewardCut.toFixed(1)}% cut
-                {prev && prev.rewardCut !== c.rewardCut && (
-                  <span
-                    className={cn(
-                      "ml-1.5 text-[11px]",
-                      c.rewardCut > prev.rewardCut
-                        ? "text-warm"
-                        : "text-green-bright"
-                    )}
-                  >
-                    {c.rewardCut > prev.rewardCut ? "▲" : "▼"}{" "}
-                    {Math.abs(c.rewardCut - prev.rewardCut).toFixed(1)}
-                  </span>
-                )}
-              </span>
-              <span className="text-muted-foreground">
-                {c.feeShare.toFixed(1)}% fee share
-              </span>
+              {c.rewardCut !== c.prevCut && (
+                <span
+                  className={c.rewardCut > c.prevCut ? "text-warm" : undefined}
+                >
+                  cut {c.prevCut.toFixed(1)}% → {c.rewardCut.toFixed(1)}%
+                </span>
+              )}
+              {c.feeShare !== c.prevShare && (
+                <span className="text-muted-foreground">
+                  share {c.prevShare.toFixed(1)}% → {c.feeShare.toFixed(1)}%
+                </span>
+              )}
             </div>
           </div>
-        );
-      })}
+        ))}
     </Card>
   );
 }
@@ -204,7 +214,7 @@ export default function OrchestratorPage() {
     switch (metric) {
       case "yield":
         return {
-          kind: "bar" as const,
+          kind: "area" as const,
           color: "var(--series-3)",
           data: recent
             .filter((p) => p.yieldPct != null)
@@ -226,19 +236,23 @@ export default function OrchestratorPage() {
           axis: (v: number) => formatNumber(v, { decimals: 0, compact: true }),
           label: "Total stake per round",
         };
-      case "fees":
+      case "fees": {
+        // One bar per round is a hairline at this range: sum into weeks.
+        const weeks: { ts: number; value: number }[] = [];
+        for (const p of recent) {
+          const last = weeks[weeks.length - 1];
+          if (last && p.ts - last.ts < 7 * 86400) last.value += p.fees;
+          else weeks.push({ ts: p.ts, value: p.fees });
+        }
         return {
           kind: "bar" as const,
           color: "var(--series-4)",
-          data: recent.map((p) => ({
-            ts: p.ts,
-            value: p.fees,
-            round: p.round,
-          })),
+          data: weeks,
           format: (v: number) => formatETH(v),
           axis: (v: number) => formatNumber(v, { decimals: 2 }),
-          label: "Fees earned per round",
+          label: "Fees earned per week",
         };
+      }
     }
   }, [o, metric]);
 
@@ -479,6 +493,15 @@ export default function OrchestratorPage() {
                       format={chart.format}
                       axisFormat={chart.axis}
                       height={240}
+                      tooltipTitle={
+                        metric === "fees"
+                          ? (p) =>
+                              `Week of ${formatDate(p.ts, {
+                                month: "short",
+                                day: "numeric",
+                              })}`
+                          : undefined
+                      }
                     />
                   ) : (
                     <Skeleton className="h-[240px] w-full" />

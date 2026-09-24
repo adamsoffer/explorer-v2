@@ -168,119 +168,185 @@ export function Positions({
   }
 
   return (
-    <Card className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-left">
-        <thead>
-          <tr className="border-b border-hairline text-ui-caption text-muted-foreground">
-            {showAccount && (
-              <th className="px-4 py-2.5 font-normal">Account</th>
-            )}
-            <th className="px-4 py-2.5 font-normal">Orchestrator</th>
-            <th className="px-4 py-2.5 text-right font-normal">Stake</th>
-            <th className="hidden px-4 py-2.5 text-right font-normal md:table-cell">
-              30d rewards
-            </th>
-            <th className="px-4 py-2.5 text-right font-normal">
-              Unclaimed fees
-            </th>
-            <th className="hidden px-4 py-2.5 font-normal lg:table-cell">
-              Trend
-            </th>
-            <th className="w-12 px-2 py-2.5" aria-label="Actions" />
-          </tr>
-        </thead>
-        <tbody>
-          {positions.map((p) => {
-            const o = p.delegate ? orchestrators.get(p.delegate) : undefined;
-            const weight = total > 0 ? (p.stake / total) * 100 : 0;
-            return (
-              <tr
-                key={p.account.address}
-                className="border-b border-hairline last:border-0 hover:bg-hover/60"
-              >
-                {showAccount && (
-                  <td className="px-4 py-3">
-                    <AccountCell account={p.account} />
-                  </td>
-                )}
-                <td className="px-4 py-3">
-                  {p.delegate ? (
-                    <div className="flex items-center gap-2">
-                      <Identity
-                        address={p.delegate}
-                        href={`/orchestrators/${p.delegate}`}
-                        size={22}
-                        secondary={
-                          o
-                            ? `${formatNumber(o.rewardCut, {
-                                decimals: 0,
-                              })}% cut · ${formatNumber(o.feeShare, {
-                                decimals: 0,
-                              })}% fee share`
-                            : undefined
-                        }
-                      />
-                      {!p.active && (
-                        <Badge tone="warning" className="ml-1">
-                          Inactive
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-ui-body text-muted-foreground">
-                      Not delegated
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="font-mono text-[13px] tabular-nums">
-                    {formatLPT(p.stake)}
-                  </div>
-                  {showAccount && (
-                    <div
-                      className="mt-1 ml-auto flex h-1 w-20 overflow-hidden rounded-full bg-foreground/8"
-                      aria-hidden="true"
-                    >
-                      <span
-                        className="h-full rounded-full bg-series-1"
-                        style={{ width: `${Math.max(2, weight)}%` }}
-                      />
-                    </div>
-                  )}
-                </td>
-                <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums md:table-cell">
-                  <span
-                    className={cn(
-                      p.rewards30d > 0
-                        ? "text-foreground"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {p.rewards30d > 0 ? "+" : ""}
-                    {formatLPT(p.rewards30d)}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                  {p.fees > 0 ? (
-                    <span className="text-foreground">{formatETH(p.fees)}</span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="hidden px-4 py-3 lg:table-cell">
-                  <Sparkline values={p.trend} color="var(--series-1)" />
-                </td>
-                <td className="px-2 py-3 text-right">
-                  <RowActions
-                    position={p}
-                    canManage={canManage(p.account.address)}
+    <>
+      {/* Phones: one card per position, figures stacked under the names. */}
+      <Card className="divide-y divide-(--hairline) md:hidden">
+        {positions.map((p) => {
+          const o = p.delegate ? orchestrators.get(p.delegate) : undefined;
+          return (
+            <div key={p.account.address} className="flex flex-col gap-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                {showAccount ? (
+                  <AccountCell account={p.account} />
+                ) : p.delegate ? (
+                  <Identity
+                    address={p.delegate}
+                    href={`/orchestrators/${p.delegate}`}
+                    size={26}
                   />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </Card>
+                ) : null}
+                <RowActions
+                  position={p}
+                  canManage={canManage(p.account.address)}
+                />
+              </div>
+              {showAccount && p.delegate && (
+                <div className="flex items-center gap-2 text-ui-caption text-muted-foreground">
+                  <span>Delegated to</span>
+                  <Identity
+                    address={p.delegate}
+                    href={`/orchestrators/${p.delegate}`}
+                    size={18}
+                  />
+                  {!p.active && <Badge tone="warning">Inactive</Badge>}
+                </div>
+              )}
+              <dl className="grid grid-cols-3 gap-3">
+                {[
+                  ["Stake", formatLPT(p.stake)],
+                  [
+                    "30d rewards",
+                    `${p.rewards30d > 0 ? "+" : ""}${formatLPT(p.rewards30d)}`,
+                  ],
+                  ["Fees", p.fees > 0 ? formatETH(p.fees) : "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex min-w-0 flex-col gap-0.5">
+                    <dt className="text-[11px] text-muted-foreground">
+                      {label}
+                    </dt>
+                    <dd className="truncate font-mono text-[12.5px] tabular-nums">
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {o && (
+                <p className="text-[11px] text-subtle-foreground">
+                  {formatNumber(o.rewardCut, { decimals: 0 })}% cut ·{" "}
+                  {formatNumber(o.feeShare, { decimals: 0 })}% fee share
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+
+      <Card className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[720px] text-left">
+          <thead>
+            <tr className="border-b border-hairline text-ui-caption text-muted-foreground">
+              {showAccount && (
+                <th className="px-4 py-2.5 font-normal">Account</th>
+              )}
+              <th className="px-4 py-2.5 font-normal">Orchestrator</th>
+              <th className="px-4 py-2.5 text-right font-normal">Stake</th>
+              <th className="hidden px-4 py-2.5 text-right font-normal md:table-cell">
+                30d rewards
+              </th>
+              <th className="px-4 py-2.5 text-right font-normal">
+                Unclaimed fees
+              </th>
+              <th className="hidden px-4 py-2.5 font-normal lg:table-cell">
+                Trend
+              </th>
+              <th className="w-12 px-2 py-2.5" aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {positions.map((p) => {
+              const o = p.delegate ? orchestrators.get(p.delegate) : undefined;
+              const weight = total > 0 ? (p.stake / total) * 100 : 0;
+              return (
+                <tr
+                  key={p.account.address}
+                  className="border-b border-hairline last:border-0 hover:bg-hover/60"
+                >
+                  {showAccount && (
+                    <td className="px-4 py-3">
+                      <AccountCell account={p.account} />
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    {p.delegate ? (
+                      <div className="flex items-center gap-2">
+                        <Identity
+                          address={p.delegate}
+                          href={`/orchestrators/${p.delegate}`}
+                          size={22}
+                          secondary={
+                            o
+                              ? `${formatNumber(o.rewardCut, {
+                                  decimals: 0,
+                                })}% cut · ${formatNumber(o.feeShare, {
+                                  decimals: 0,
+                                })}% fee share`
+                              : undefined
+                          }
+                        />
+                        {!p.active && (
+                          <Badge tone="warning" className="ml-1">
+                            Inactive
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-ui-body text-muted-foreground">
+                        Not delegated
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="font-mono text-[13px] whitespace-nowrap tabular-nums">
+                      {formatLPT(p.stake)}
+                    </div>
+                    {showAccount && (
+                      <div
+                        className="mt-1 ml-auto flex h-1 w-20 overflow-hidden rounded-full bg-foreground/8"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className="h-full rounded-full bg-series-1"
+                          style={{ width: `${Math.max(2, weight)}%` }}
+                        />
+                      </div>
+                    )}
+                  </td>
+                  <td className="hidden px-4 py-3 text-right font-mono text-[13px] whitespace-nowrap tabular-nums md:table-cell">
+                    <span
+                      className={cn(
+                        p.rewards30d > 0
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {p.rewards30d > 0 ? "+" : ""}
+                      {formatLPT(p.rewards30d)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                    {p.fees > 0 ? (
+                      <span className="text-foreground">
+                        {formatETH(p.fees)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="hidden px-4 py-3 lg:table-cell">
+                    <Sparkline values={p.trend} color="var(--series-1)" />
+                  </td>
+                  <td className="px-2 py-3 text-right">
+                    <RowActions
+                      position={p}
+                      canManage={canManage(p.account.address)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+    </>
   );
 }

@@ -16,6 +16,7 @@ import { normalize } from "viem/ens";
 import { useEnsAddress } from "wagmi";
 
 import { Avatar, useIdentity } from "@/components/identity";
+import { THEME_OPTIONS, useTheme } from "@/components/theme";
 import { cn } from "@/lib/cn";
 import { L1_CHAIN } from "@/lib/config";
 import { formatLPT, shortAddress } from "@/lib/format";
@@ -64,6 +65,7 @@ export function CommandSearch({
   const listRef = useRef<HTMLDivElement>(null);
   const { data: orchestrators } = useOrchestrators();
   const { add, list } = useWatchlist();
+  const { preference, setPreference } = useTheme();
 
   const trimmed = query.trim();
   const looksEns = /\.[a-z]{2,}$/i.test(trimmed) && !trimmed.startsWith("0x");
@@ -136,6 +138,26 @@ export function CommandSearch({
       }
     }
 
+    if (
+      q &&
+      "theme appearance dark light system mode".includes(q.split(" ")[0])
+    ) {
+      for (const t of THEME_OPTIONS) {
+        if (t.value === preference) continue;
+        const Icon = t.icon;
+        out.push({
+          id: `theme-${t.value}`,
+          group: "Appearance",
+          label:
+            t.value === "system"
+              ? "Match system theme"
+              : `Switch to ${t.label.toLowerCase()} theme`,
+          icon: <Icon className="size-4" strokeWidth={1.75} />,
+          run: () => setPreference(t.value),
+        });
+      }
+    }
+
     if (orchestrators && !target) {
       const matches = orchestrators
         .filter((o) => !q || o.id.includes(q))
@@ -156,7 +178,17 @@ export function CommandSearch({
       }
     }
     return out;
-  }, [trimmed, target, ensName, orchestrators, list, router, add]);
+  }, [
+    trimmed,
+    target,
+    ensName,
+    orchestrators,
+    list,
+    router,
+    add,
+    preference,
+    setPreference,
+  ]);
 
   useEffect(() => setCursor(0), [query]);
 

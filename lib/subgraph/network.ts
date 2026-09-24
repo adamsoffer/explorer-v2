@@ -1,4 +1,4 @@
-import { PoolHistory } from "@/lib/portfolio/compute";
+import { PoolHistory, PRECISE } from "@/lib/portfolio/compute";
 
 import { paginate, querySubgraph } from "./client";
 import { toPoolPoint } from "./portfolio";
@@ -501,6 +501,7 @@ const ORCHESTRATOR = /* GraphQL */ `
     ) {
       id
       bondedAmount
+      shares
       startRound
     }
   }
@@ -537,7 +538,12 @@ export async function fetchOrchestrator(
   const [data, rawPools] = await Promise.all([
     querySubgraph<{
       transcoder: RawTranscoder | null;
-      delegators: { id: string; bondedAmount: string; startRound: string }[];
+      delegators: {
+        id: string;
+        bondedAmount: string;
+        shares: string;
+        startRound: string;
+      }[];
     }>(ORCHESTRATOR, {
       id: address,
       windowStart: windowStart(protocol),
@@ -547,6 +553,7 @@ export async function fetchOrchestrator(
   if (!data.transcoder) return null;
 
   const history = new PoolHistory(rawPools.map(toPoolPoint));
+  const latestCrf = history.latest()?.crf ?? 0n;
   const pools = rawPools
     .map((p) => {
       const round = Number(p.round.id);
@@ -577,11 +584,22 @@ export async function fetchOrchestrator(
     ),
     pools,
     delegatorCount: data.delegators.length,
-    delegatorList: data.delegators.map((d) => ({
-      id: d.id,
-      bondedAmount: Number(d.bondedAmount),
-      startRound: Number(d.startRound),
-    })),
+    // Current stake is shares at the latest factor; `bondedAmount` is only
+    // as fresh as each delegator's last claim.
+    delegatorList: data.delegators
+      .map((d) => {
+        const shares = BigInt(d.shares || "0");
+        const stake =
+          latestCrf > 0n && shares > 0n
+            ? Number((shares * latestCrf) / PRECISE) / 1e18
+            : Number(d.bondedAmount);
+        return {
+          id: d.id,
+          bondedAmount: stake,
+          startRound: Number(d.startRound),
+        };
+      })
+      .sort((a, b) => b.bondedAmount - a.bondedAmount),
     lifetimeRewardCommission:
       Number(data.transcoder.lifetimeRewardCommission) / 1e18,
     lifetimeFeeCommission: Number(data.transcoder.lifetimeFeeCommission) / 1e18,

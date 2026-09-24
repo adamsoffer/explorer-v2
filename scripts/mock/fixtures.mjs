@@ -243,7 +243,8 @@ export function generate({
     const mintable = (inflation / 1e9) * supply;
     const volumeETH = Math.max(
       1.5,
-      (12 + 7 * Math.sin((r - R0) / 23) + normal() * 3) * (1 + (r - R0) / 800)
+      (6 + 3.5 * Math.sin((r - R0) / 23) + normal() * 1.5) *
+        (1 + (r - R0) / 800)
     );
     ethPrice = Math.max(1800, ethPrice * (1 + normal() * 0.02) + 1.2);
     const weightSum = orchs.reduce((s, o) => s + o.volumeWeight, 0);
@@ -592,19 +593,6 @@ export function generate({
         } else {
           const stake = stakeOf(shares, id, r - 1) + commission;
           shares = sharesFor(stake, id, r);
-          // Claims are recorded via a zero-amount bond (restake of earnings).
-          addEvent(
-            "BondEvent",
-            r,
-            {
-              delegator: id,
-              newDelegate: id,
-              oldDelegate: id,
-              additionalAmount: "0",
-              bondedAmount: weiToDec(stake),
-            },
-            { ts }
-          );
         }
         snap(id, id, r, shares, ts);
         commission = 0n;
@@ -724,9 +712,15 @@ export function generate({
     const c = commissionFor.get(o.id) ?? { reward: 0n, fee: 0n };
     const st = state.get(o.id);
     const lastChange = o.cutHistory[o.cutHistory.length - 1];
+    const activationTs = dayStart(
+      roundTs.get(R0) - (R0 - o.activationRound) * ROUND_SECONDS
+    );
     const cutTs = lastChange
       ? dayStart(roundTs.get(lastChange.round))
-      : dayStart(roundTs.get(R0) - int(10, 400) * 86400);
+      : Math.max(
+          activationTs,
+          dayStart(roundTs.get(R0) - int(10, 400) * 86400)
+        );
     const selfD = delegators.get(o.id);
     const thirty = o.fees30.slice(-35).reduce((a, b) => a + b, 0);
     return {

@@ -225,7 +225,7 @@ export function ScopeBar({
   const [adding, setAdding] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&>*]:shrink-0">
       {accounts.length > 1 && (
         <Chip active={scope === "all"} onClick={() => onScope("all")}>
           <span className="pl-1.5">All accounts</span>

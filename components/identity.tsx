@@ -166,7 +166,7 @@ export function Identity({
   return (
     <Link
       href={href ?? `/accounts/${address}`}
-      className="-m-1 min-w-0 rounded-sm p-1 transition-colors outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-green-bright/40"
+      className="-m-1 inline-flex max-w-full min-w-0 rounded-sm p-1 transition-colors outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-green-bright/40"
     >
       {body}
     </Link>

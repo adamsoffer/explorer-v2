@@ -42,14 +42,14 @@ export function PortfolioHero({
   series,
   stake,
   lptPrice,
-  accruing,
+  perRound,
   nowSec,
   loading,
 }: {
   series: SeriesPoint[];
   stake: number;
   lptPrice?: number;
-  accruing: number;
+  perRound: number;
   nowSec: number;
   loading?: boolean;
 }) {
@@ -164,15 +164,15 @@ export function PortfolioHero({
               </span>
             )}
           </div>
-          {!loading && accruing > 0 && (
-            <Tooltip content="Estimated from the last round's reward, prorated by how far the current round has progressed. Lands when your orchestrator calls reward.">
+          {!loading && perRound > 0 && (
+            <Tooltip content="Your average reward per round over the last 30 rounds. It arrives each round your orchestrator calls reward.">
               <div className="mt-1 flex w-fit cursor-default items-center gap-2 text-ui-caption text-muted-foreground">
                 <StatusDot pulse />
-                Earning about{" "}
+                About
                 <span className="font-mono text-foreground tabular-nums">
-                  {formatNumber(accruing, { decimals: 2 })} LPT
+                  +{formatNumber(perRound, { decimals: 2 })} LPT
                 </span>
-                this round
+                per round at the current rate
               </div>
             </Tooltip>
           )}

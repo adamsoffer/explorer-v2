@@ -59,7 +59,18 @@ export function formatLPT(value: number, opts: { compact?: boolean } = {}) {
 
 export function formatETH(value: number) {
   const abs = Math.abs(value);
-  const decimals = abs === 0 ? 0 : abs >= 1 ? 3 : abs >= 0.001 ? 4 : 6;
+  const decimals =
+    abs === 0
+      ? 0
+      : abs >= 1000
+      ? 0
+      : abs >= 100
+      ? 2
+      : abs >= 1
+      ? 3
+      : abs >= 0.001
+      ? 4
+      : 6;
   return `${formatNumber(value, { decimals })} ETH`;
 }
 

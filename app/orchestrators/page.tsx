@@ -251,174 +251,229 @@ function OrchestratorTable() {
       {error ? (
         <ErrorNotice error={error} onRetry={() => refetch()} />
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full min-w-[940px] text-left text-ui-body">
-            <thead>
-              <tr className="border-b border-hairline text-ui-caption">
-                <th className="sticky left-0 z-10 bg-muted px-3 py-2.5 pl-4 font-normal text-muted-foreground">
-                  Orchestrator
-                </th>
-                <SortHeader
-                  label="Total stake"
-                  k="stake"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                />
-                <SortHeader
-                  label="Realised APR"
-                  k="apr"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                  hint="Delegator yield actually paid over the last 30 rounds (cumulative reward factor growth), annualised."
-                />
-                <th className="px-3 py-2.5 text-right font-normal whitespace-nowrap text-muted-foreground">
-                  Est. yearly
-                </th>
-                <SortHeader
-                  label="Reward calls"
-                  k="calls"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                  hint="Rounds in which reward() was called, out of the last 30."
-                />
-                <SortHeader
-                  label="Reward cut"
-                  k="rewardCut"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                  hint="Share of inflationary rewards the orchestrator keeps."
-                />
-                <SortHeader
-                  label="Fee share"
-                  k="feeShare"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                  hint="Share of ETH fees passed on to delegators."
-                />
-                <SortHeader
-                  label="30d fees"
-                  k="fees"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                />
-                <SortHeader
-                  label="Delegators"
-                  k="delegators"
-                  sort={sort}
-                  dir={dir}
-                  onSort={onSort}
-                />
-                <th className="w-24 px-3 py-2.5" aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading &&
-                Array.from({ length: 10 }).map((_, i) => (
-                  <tr
-                    key={i}
-                    className="border-b border-hairline last:border-0"
+        <>
+          {/* Phones: condensed cards with the figures that decide a delegation. */}
+          <Card className="divide-y divide-(--hairline) md:hidden">
+            {isLoading &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-4">
+                  <Skeleton className="size-7 rounded-full" />
+                  <Skeleton className="h-3.5 w-1/2" />
+                </div>
+              ))}
+            {rows.map(({ o, rank }) => (
+              <div key={o.id} className="flex flex-col gap-3 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <NameCell o={o} rank={rank} />
+                  <Button
+                    size="xs"
+                    onClick={() => open({ kind: "delegate", to: o.id })}
                   >
-                    <td className="px-4 py-3.5" colSpan={10}>
-                      <div className="flex items-center gap-3">
-                        <Skeleton className="size-7 rounded-full" />
-                        <Skeleton className="h-3.5 w-40" />
-                        <Skeleton className="ml-auto h-3.5 w-1/2" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              {rows.map(({ o, rank }) => {
-                const share = totalStake
-                  ? (o.totalStake / totalStake) * 100
-                  : null;
-                return (
-                  <tr
-                    key={o.id}
-                    className="group border-b border-hairline transition-colors last:border-0 hover:bg-hover/60"
-                  >
-                    <td className="sticky left-0 z-10 bg-muted px-3 py-3 pl-1 group-hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_2.5%)]">
-                      <NameCell o={o} rank={rank} />
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="font-mono text-[13px] tabular-nums">
-                        {formatLPT(o.totalStake, { compact: true })}
-                      </div>
-                      {share != null && (
-                        <div className="font-mono text-[11px] text-subtle-foreground tabular-nums">
-                          {share.toFixed(2)}%
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] tabular-nums">
-                      {o.realizedApr != null
+                    {moving ? "Move here" : "Delegate"}
+                  </Button>
+                </div>
+                <dl className="grid grid-cols-3 gap-3 pl-9">
+                  {[
+                    ["Stake", formatLPT(o.totalStake, { compact: true })],
+                    [
+                      "Realised APR",
+                      o.realizedApr != null
                         ? `${o.realizedApr.toFixed(1)}%`
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                      {o.realizedApr != null && stakeAmount > 0
-                        ? `+${formatNumber(
-                            stakeAmount * (o.realizedApr / 100),
-                            {
-                              decimals:
-                                stakeAmount * (o.realizedApr / 100) >= 100
-                                  ? 0
-                                  : 1,
-                            }
-                          )}`
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <CallsMeter
-                        calls={o.rewardCalls}
-                        window={o.rewardWindow}
-                      />
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] tabular-nums">
-                      {o.rewardCut.toFixed(o.rewardCut % 1 ? 1 : 0)}%
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] tabular-nums">
-                      {o.feeShare.toFixed(o.feeShare % 1 ? 1 : 0)}%
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                      {o.thirtyDayVolumeETH > 0
-                        ? formatETH(o.thirtyDayVolumeETH)
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                      {o.delegatorCount >= 1000
-                        ? "1,000+"
-                        : o.delegatorCount.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-3 pr-4 text-right">
-                      <Button
-                        size="xs"
-                        className={cn(
-                          !moving &&
-                            "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100"
+                        : "—",
+                    ],
+                    [
+                      "Cut · Share",
+                      `${o.rewardCut.toFixed(0)}% · ${o.feeShare.toFixed(0)}%`,
+                    ],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex min-w-0 flex-col gap-0.5">
+                      <dt className="text-[11px] text-muted-foreground">
+                        {label}
+                      </dt>
+                      <dd className="truncate font-mono text-[12.5px] tabular-nums">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="pl-9">
+                  <CallsMeter calls={o.rewardCalls} window={o.rewardWindow} />
+                </div>
+              </div>
+            ))}
+            {!isLoading && rows.length === 0 && (
+              <EmptyState title="No orchestrators match" />
+            )}
+          </Card>
+          <Card className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[940px] text-left text-ui-body">
+              <thead>
+                <tr className="border-b border-hairline text-ui-caption">
+                  <th className="sticky left-0 z-10 bg-muted px-3 py-2.5 pl-4 font-normal text-muted-foreground">
+                    Orchestrator
+                  </th>
+                  <SortHeader
+                    label="Total stake"
+                    k="stake"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                  />
+                  <SortHeader
+                    label="Realised APR"
+                    k="apr"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                    hint="Delegator yield actually paid over the last 30 rounds (cumulative reward factor growth), annualised."
+                  />
+                  <th className="px-3 py-2.5 text-right font-normal whitespace-nowrap text-muted-foreground">
+                    Est. yearly
+                  </th>
+                  <SortHeader
+                    label="Reward calls"
+                    k="calls"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                    hint="Rounds in which reward() was called, out of the last 30."
+                  />
+                  <SortHeader
+                    label="Reward cut"
+                    k="rewardCut"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                    hint="Share of inflationary rewards the orchestrator keeps."
+                  />
+                  <SortHeader
+                    label="Fee share"
+                    k="feeShare"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                    hint="Share of ETH fees passed on to delegators."
+                  />
+                  <SortHeader
+                    label="30d fees"
+                    k="fees"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                  />
+                  <SortHeader
+                    label="Delegators"
+                    k="delegators"
+                    sort={sort}
+                    dir={dir}
+                    onSort={onSort}
+                  />
+                  <th className="w-24 px-3 py-2.5" aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading &&
+                  Array.from({ length: 10 }).map((_, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-hairline last:border-0"
+                    >
+                      <td className="px-4 py-3.5" colSpan={10}>
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="size-7 rounded-full" />
+                          <Skeleton className="h-3.5 w-40" />
+                          <Skeleton className="ml-auto h-3.5 w-1/2" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {rows.map(({ o, rank }) => {
+                  const share = totalStake
+                    ? (o.totalStake / totalStake) * 100
+                    : null;
+                  return (
+                    <tr
+                      key={o.id}
+                      className="group border-b border-hairline transition-colors last:border-0 hover:bg-hover/60"
+                    >
+                      <td className="sticky left-0 z-10 bg-muted px-3 py-3 pl-1 group-hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_2.5%)]">
+                        <NameCell o={o} rank={rank} />
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="font-mono text-[13px] whitespace-nowrap tabular-nums">
+                          {formatLPT(o.totalStake, { compact: true })}
+                        </div>
+                        {share != null && (
+                          <div className="font-mono text-[11px] text-subtle-foreground tabular-nums">
+                            {share.toFixed(2)}%
+                          </div>
                         )}
-                        onClick={() => open({ kind: "delegate", to: o.id })}
-                      >
-                        {moving ? "Move here" : "Delegate"}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!isLoading && rows.length === 0 && (
-            <EmptyState
-              title="No orchestrators match"
-              description="Try a different address or clear the filter."
-            />
-          )}
-        </Card>
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap tabular-nums">
+                        {o.realizedApr != null
+                          ? `${o.realizedApr.toFixed(1)}%`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                        {o.realizedApr != null && stakeAmount > 0
+                          ? `+${formatNumber(
+                              stakeAmount * (o.realizedApr / 100),
+                              {
+                                decimals:
+                                  stakeAmount * (o.realizedApr / 100) >= 100
+                                    ? 0
+                                    : 1,
+                              }
+                            )}`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <CallsMeter
+                          calls={o.rewardCalls}
+                          window={o.rewardWindow}
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap tabular-nums">
+                        {o.rewardCut.toFixed(o.rewardCut % 1 ? 1 : 0)}%
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap tabular-nums">
+                        {o.feeShare.toFixed(o.feeShare % 1 ? 1 : 0)}%
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                        {o.thirtyDayVolumeETH > 0
+                          ? formatETH(o.thirtyDayVolumeETH)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                        {o.delegatorCount >= 1000
+                          ? "1,000+"
+                          : o.delegatorCount.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-3 pr-4 text-right">
+                        <Button
+                          size="xs"
+                          className={cn(
+                            !moving &&
+                              "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100"
+                          )}
+                          onClick={() => open({ kind: "delegate", to: o.id })}
+                        >
+                          {moving ? "Move here" : "Delegate"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!isLoading && rows.length === 0 && (
+              <EmptyState
+                title="No orchestrators match"
+                description="Try a different address or clear the filter."
+              />
+            )}
+          </Card>
+        </>
       )}
       {data && (
         <p className="mt-3 text-[11px] text-subtle-foreground">

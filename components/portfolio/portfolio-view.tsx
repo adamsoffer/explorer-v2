@@ -10,7 +10,7 @@ import {
   Section,
   SectionHeader,
 } from "@/components/page";
-import { roundState, useNow } from "@/components/shell/round-clock";
+import { useNow } from "@/components/shell/round-clock";
 import { useStaking } from "@/components/staking/staking";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
@@ -184,9 +184,10 @@ export function PortfolioView({
       }
       if (o && o.rewardWindow > 0 && o.rewardCalls < o.rewardWindow) {
         const missed = o.rewardWindow - o.rewardCalls;
+        // This position's own average reward per called round, so a
+        // commission-earning account elsewhere in the portfolio can't skew it.
         const perRound =
-          view.lastReward *
-          (pos && view.stake > 0 ? pos.stake / view.stake : 1);
+          pos && o.rewardCalls > 0 ? pos.rewards30d / o.rewardCalls : 0;
         out.push({
           id: `missed-${d}`,
           tone: missed >= 3 ? "warning" : "info",
@@ -212,23 +213,43 @@ export function PortfolioView({
     for (const u of updates ?? []) {
       if (!u.delegate || seen.has(u.delegate)) continue;
       seen.add(u.delegate);
-      const o = orchestrators.get(u.delegate);
+      const prev = (updates ?? []).find(
+        (x) => x.delegate === u.delegate && x.timestamp < u.timestamp
+      );
+      const parts: string[] = [];
+      const pct = (v?: number) => `${v?.toFixed(1)}%`;
+      if (!prev || prev.rewardCut !== u.rewardCut) {
+        parts.push(
+          prev
+            ? `reward cut ${pct(prev.rewardCut)} → ${pct(u.rewardCut)}`
+            : `reward cut to ${pct(u.rewardCut)}`
+        );
+      }
+      if (!prev || prev.feeShare !== u.feeShare) {
+        parts.push(
+          prev
+            ? `fee share ${pct(prev.feeShare)} → ${pct(u.feeShare)}`
+            : `fee share to ${pct(u.feeShare)}`
+        );
+      }
+      if (!parts.length) continue;
+      const raised = prev && (u.rewardCut ?? 0) > (prev.rewardCut ?? 0);
       out.push({
         id: `cut-${u.id}`,
-        tone: "info",
+        tone: raised ? "warning" : "info",
         kind: "cut",
         href: `/orchestrators/${u.delegate}`,
         title: (
           <>
-            {insightOrchestrator(u.delegate)} changed its reward cut to{" "}
-            {u.rewardCut?.toFixed(1)}% and fee share to {u.feeShare?.toFixed(1)}
-            %
+            {insightOrchestrator(u.delegate)}{" "}
+            {parts.some((x) => x.includes("→")) ? "changed" : "set"} its{" "}
+            {parts.join(" and ")}
           </>
         ),
-        detail: `${new Date(u.timestamp * 1000).toLocaleDateString("en-US", {
+        detail: new Date(u.timestamp * 1000).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-        })}${o ? ` · currently ${o.rewardCut.toFixed(1)}% cut` : ""}`,
+        }),
       });
     }
     const ready = view.unbonding.filter(
@@ -254,8 +275,7 @@ export function PortfolioView({
   if (error) return <ErrorNotice error={error} onRetry={() => refetch()} />;
 
   const loading = isLoading || !view;
-  const accruing =
-    view && protocol ? view.lastReward * roundState(protocol, now).progress : 0;
+  const perRound = view ? view.stake * view.rate : 0;
   const lpt = prices?.lpt;
   const multi = accounts.length > 1;
   const firstManageable = view?.positions.find((p) =>
@@ -278,7 +298,7 @@ export function PortfolioView({
           series={view?.series ?? []}
           stake={view?.stake ?? 0}
           lptPrice={lpt}
-          accruing={accruing}
+          perRound={perRound}
           nowSec={nowSec}
           loading={loading}
         />

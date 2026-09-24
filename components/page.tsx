@@ -92,7 +92,9 @@ export function Section({
   className,
   ...props
 }: React.ComponentProps<"section">) {
-  return <section className={cn("mt-10 first:mt-0", className)} {...props} />;
+  return (
+    <section className={cn("mt-10 first-of-type:mt-0", className)} {...props} />
+  );
 }
 
 export function Card({ className, ...props }: React.ComponentProps<"div">) {
@@ -143,9 +145,7 @@ export function Kpi({
         {value}
       </div>
       {sub && (
-        <div className="truncate text-ui-caption text-muted-foreground">
-          {sub}
-        </div>
+        <div className="text-ui-caption text-muted-foreground">{sub}</div>
       )}
     </div>
   );

@@ -70,7 +70,7 @@ export function TimeSeriesChart({
   axisFormat,
   reference,
   tooltipTitle,
-  domain = ["auto", "auto"],
+  domain,
   ariaLabel,
 }: {
   data: Point[];
@@ -120,7 +120,7 @@ export function TimeSeriesChart({
       axisLine={false}
       tickLine={false}
       width={56}
-      domain={domain}
+      domain={domain ?? (kind === "bar" ? [0, "auto"] : ["auto", "auto"])}
       tickCount={4}
     />
   );

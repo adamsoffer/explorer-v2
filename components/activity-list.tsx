@@ -24,14 +24,17 @@ import {
   formatRelativeTime,
   shortAddress,
 } from "@/lib/format";
+import { useWatchlist } from "@/lib/hooks/watchlist";
 import type { ActivityEvent } from "@/lib/subgraph/network";
 
 function Name({ address }: { address?: string }) {
   const { name } = useIdentity(address);
+  const { list } = useWatchlist();
+  const label = list.find((w) => w.address === address?.toLowerCase())?.label;
   if (!address) return null;
   return (
     <span className="text-foreground">
-      {name ?? (
+      {label ?? name ?? (
         <span className="font-mono text-[13px]">{shortAddress(address)}</span>
       )}
     </span>
@@ -106,8 +109,8 @@ function describe(e: ActivityEvent): {
         actor: e.delegate,
         text: (
           <>
-            <Name address={e.delegate} /> claimed {formatLPT(e.amount ?? 0)} in
-            rewards
+            <Name address={e.delegate} /> called reward, minting{" "}
+            {formatLPT(e.amount ?? 0)} to its pool
           </>
         ),
       };

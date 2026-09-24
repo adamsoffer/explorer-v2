@@ -324,6 +324,7 @@ const resolvers = {
         .map((d) => ({
           id: d.id,
           bondedAmount: d.bondedAmount,
+          shares: d.shares,
           startRound: d.startRound,
         })),
     };
