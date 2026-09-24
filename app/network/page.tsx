@@ -1,8 +1,12 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { ActivityList } from "@/components/activity-list";
 import { type Point, TimeSeriesChart } from "@/components/charts/time-series";
+import { LiveStatus } from "@/components/live-status";
 import {
   Card,
   ErrorNotice,
@@ -25,7 +29,13 @@ import {
   formatRelativeTime,
   formatUSD,
 } from "@/lib/format";
-import { useDays, useProtocol } from "@/lib/hooks/queries";
+import { useLiveFeed } from "@/lib/hooks/live-feed";
+import {
+  useDays,
+  useEvents,
+  useProtocol,
+  useRewardProgress,
+} from "@/lib/hooks/queries";
 import type { Day, Protocol } from "@/lib/subgraph/network";
 
 /* ── Round ───────────────────────────────────────────────────────────────── */
@@ -395,6 +405,106 @@ function RecentRounds({ protocol }: { protocol?: Protocol }) {
   );
 }
 
+/* ── Reward calls this round ─────────────────────────────────────────────── */
+
+/**
+ * How many active orchestrators have called reward in the current round.
+ * It fills through every round and resets at the next, so the page always
+ * shows the protocol moving; a laggard late in a round is worth knowing.
+ */
+function RewardCalls({ protocol }: { protocol?: Protocol }) {
+  const round = protocol?.currentRound;
+  const { data } = useRewardProgress(round);
+  const pct = data && data.total > 0 ? (data.called / data.total) * 100 : 0;
+  return (
+    <Card className="flex flex-col gap-3 p-5 sm:p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="flex items-baseline gap-2">
+          <span className="text-ui-caption text-muted-foreground">
+            Reward calls this round
+          </span>
+          {round != null && (
+            <span className="font-mono text-[11px] text-subtle-foreground tabular-nums">
+              {round.toLocaleString()}
+            </span>
+          )}
+        </div>
+        {data ? (
+          <span className="text-ui-caption text-muted-foreground">
+            <span className="font-mono text-foreground tabular-nums">
+              {formatLPT(data.minted, { compact: true })}
+            </span>{" "}
+            minted so far
+            {data.total > data.called && (
+              <> · {data.total - data.called} still to call</>
+            )}
+          </span>
+        ) : (
+          <Skeleton className="h-3 w-40" />
+        )}
+      </div>
+      <div className="flex items-center gap-4">
+        <span className="font-mono text-[22px] leading-none tabular-nums">
+          {data ? (
+            <>
+              {data.called}
+              <span className="text-muted-foreground">/{data.total}</span>
+            </>
+          ) : (
+            <Skeleton className="h-6 w-16" />
+          )}
+        </span>
+        <div
+          role="progressbar"
+          aria-label="Orchestrators that have called reward this round"
+          aria-valuenow={Math.round(pct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="h-2 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]"
+        >
+          <div
+            className="h-full rounded-full bg-green-bright transition-[width] duration-700 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Latest activity ─────────────────────────────────────────────────────── */
+
+function LatestActivity() {
+  const { data, isLoading, error, dataUpdatedAt } = useEvents(200);
+  const latest = useMemo(() => data?.slice(0, 8), [data]);
+  // The feed sits mid-page, so never hold arrivals back for scrolling.
+  const { shown, fresh } = useLiveFeed(latest, { holdBelow: Infinity });
+  return (
+    <Section>
+      <SectionHeader
+        title="Latest activity"
+        description="Fees earned, delegations, reward calls and votes, as they're indexed"
+        action={
+          <>
+            <LiveStatus updatedAt={dataUpdatedAt} failing={Boolean(error)} />
+            <Link
+              href="/activity"
+              className="ml-2 inline-flex items-center gap-1 text-ui-caption text-muted-foreground hover:text-foreground"
+            >
+              View all <ArrowRight className="size-3" />
+            </Link>
+          </>
+        }
+      />
+      <ActivityList
+        events={shown}
+        loading={isLoading || !shown}
+        fresh={fresh}
+      />
+    </Section>
+  );
+}
+
 /* ── Page ────────────────────────────────────────────────────────────────── */
 
 export default function NetworkPage() {
@@ -420,8 +530,13 @@ export default function NetworkPage() {
             )}
             <NetworkKpis protocol={protocol} />
           </div>
+          <div className="mt-4">
+            <RewardCalls protocol={protocol} />
+          </div>
         </Section>
       )}
+
+      <LatestActivity />
 
       <HistorySection />
 

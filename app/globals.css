@@ -188,6 +188,7 @@ html[data-theme="light"] {
   --animate-halo: halo 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-rise: rise 300ms var(--ease-out) both;
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-arrive: arrive 2.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes breathe {
@@ -220,6 +221,22 @@ html[data-theme="light"] {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* A feed row that just arrived: slides in, glows green, settles. */
+@keyframes arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+    background-color: color-mix(in srgb, var(--green-bright) 12%, transparent);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    background-color: transparent;
   }
 }
 

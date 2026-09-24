@@ -11,6 +11,7 @@ import {
   fetchOrchestrators,
   fetchOrchestratorUpdates,
   fetchProtocol,
+  fetchRewardProgress,
 } from "@/lib/subgraph/network";
 import { fetchPortfolio } from "@/lib/subgraph/portfolio";
 import {
@@ -70,12 +71,24 @@ export function useDays(first = 365) {
   });
 }
 
+/** Protocol-wide events, polled often enough to feel live. */
 export function useEvents(first = 100) {
   return useQuery({
     queryKey: ["events", first],
     queryFn: () => fetchEvents(first),
-    staleTime: MINUTE,
-    refetchInterval: MINUTE,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  });
+}
+
+/** Who has called reward in the current round so far. */
+export function useRewardProgress(round: number | undefined) {
+  return useQuery({
+    queryKey: ["reward-progress", round],
+    queryFn: () => fetchRewardProgress(round!),
+    enabled: round != null,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
 }
 

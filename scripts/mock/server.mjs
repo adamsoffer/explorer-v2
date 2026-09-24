@@ -4,7 +4,7 @@
 
 import http from "node:http";
 
-import { generate } from "./fixtures.mjs";
+import { generate, ROUND_SECONDS } from "./fixtures.mjs";
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -194,6 +194,25 @@ function shapeEvent(e) {
     case "TranscoderActivatedEvent":
     case "TranscoderDeactivatedEvent":
       return { ...base, delegate: ref(e.delegate) };
+    case "WinningTicketRedeemedEvent":
+      return { ...base, recipient: ref(e.delegate), faceValue: e.amount };
+    case "VoteEvent":
+      return {
+        ...base,
+        pollVoter: e.delegator,
+        choiceID: e.choiceID,
+        poll: ref(e.poll),
+      };
+    case "TreasuryVoteEvent":
+      return {
+        ...base,
+        treasuryVoter: ref(e.delegator),
+        support: e.support,
+        weight: e.amount,
+        treasuryProposal: ref(e.proposal),
+      };
+    case "PollCreatedEvent":
+      return { ...base, poll: ref(e.poll) };
     default:
       return base;
   }
@@ -267,6 +286,103 @@ function mockVoters(key, count, buckets) {
         ? null
         : REASONS[Math.floor(rnd() * REASONS.length)],
   }));
+}
+
+/* ── Live events: a trickle of new transactions while the mock runs ──────── */
+
+const live = [];
+let liveSeq = 0;
+const liveRnd = seeded(`live-${SEED}`);
+const livePick = (xs) => xs[Math.floor(liveRnd() * xs.length)];
+const liveHex = (n) => hex(liveRnd, n);
+
+/** One new protocol transaction, weighted towards what's most frequent. */
+function liveEvent(ts) {
+  const active = f.transcoders.filter((t) => t.active);
+  const delegators = [...f.delegators.values()];
+  const r = liveRnd();
+  const tx = "0x" + liveHex(64);
+  const base = {
+    id: `${tx}-${liveSeq++}`,
+    round: f.protocol.currentRound,
+    timestamp: ts,
+    tx,
+  };
+  if (r < 0.62) {
+    const o = livePick(active);
+    return {
+      ...base,
+      __typename: "WinningTicketRedeemedEvent",
+      from: o.id,
+      delegate: o.id,
+      amount: (0.004 + liveRnd() * 0.05).toFixed(6),
+    };
+  }
+  if (r < 0.8) {
+    const o = livePick(active);
+    return {
+      ...base,
+      __typename: "RewardEvent",
+      from: o.id,
+      delegate: o.id,
+      rewardTokens: (40 + liveRnd() * 900).toFixed(4),
+    };
+  }
+  if (r < 0.9) {
+    const d = livePick(delegators);
+    const o = livePick(active);
+    return {
+      ...base,
+      __typename: "BondEvent",
+      from: d.id,
+      delegator: d.id,
+      newDelegate: o.id,
+      oldDelegate: o.id,
+      additionalAmount: (5 + liveRnd() * 2400).toFixed(4),
+    };
+  }
+  if (r < 0.95) {
+    const p = f.polls[0];
+    const o = livePick(active);
+    return {
+      ...base,
+      __typename: "VoteEvent",
+      from: o.id,
+      delegator: o.id,
+      choiceID: liveRnd() < 0.85 ? "0" : "1",
+      poll: p.id,
+    };
+  }
+  const p = f.treasuryProposals[0];
+  const o = livePick(active);
+  return {
+    ...base,
+    __typename: "TreasuryVoteEvent",
+    from: o.id,
+    delegator: o.id,
+    support: livePick(["For", "For", "For", "Against", "Abstain"]),
+    amount: (Number(o.totalStake) * 0.9).toFixed(4),
+    proposal: p.id,
+  };
+}
+
+{
+  // Backfill the last couple of hours, then keep adding every few seconds.
+  const now = Math.floor(Date.now() / 1000);
+  for (let i = 40; i > 0; i--)
+    live.push(liveEvent(now - Math.floor(i * 180 * (0.6 + liveRnd() * 0.8))));
+  live.push({
+    id: `newround-${f.protocol.currentRound}`,
+    __typename: "NewRoundEvent",
+    round: f.protocol.currentRound,
+    timestamp: f.roundByNum.get(f.protocol.currentRound).startTimestamp,
+    tx: "0x" + liveHex(64),
+    from: f.transcoders[0].id,
+  });
+  setInterval(
+    () => live.push(liveEvent(Math.floor(Date.now() / 1000))),
+    Number(process.env.MOCK_LIVE_MS ?? 7000)
+  ).unref();
 }
 
 const resolvers = {
@@ -399,11 +515,36 @@ const resolvers = {
   },
 
   Events: ({ first = 100 }) => ({
-    transactions: [...f.transactions]
+    transactions: [
+      ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),
+      ...f.transactions,
+    ]
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, first)
       .map((t) => ({ events: t.events.map(shapeEvent) })),
   }),
+
+  // Current round: orchestrators call reward over the first part of the
+  // round, so how many have called depends on how far in we are.
+  RewardProgress: ({ round }) => {
+    const r = Number(round);
+    const cur = f.protocol.currentRound;
+    const start = f.roundByNum.get(cur).startTimestamp;
+    const elapsed = (Date.now() / 1000 - start) / ROUND_SECONDS;
+    return {
+      pools: f.transcoders
+        .filter((t) => t.active)
+        .map((t) => {
+          const p = (f.pools.get(t.id) ?? []).find((x) => x.round === r);
+          const due = seeded(`${t.id}-${r}`)() * 0.55;
+          const called = r < cur || (elapsed >= due && p?.rewardTokens);
+          return {
+            delegate: { id: t.id },
+            rewardTokens: called ? p?.rewardTokens ?? "100" : null,
+          };
+        }),
+    };
+  },
 
   AccountEvents: ({ ids, first = 50 }) => {
     const set = new Set(lower(ids));

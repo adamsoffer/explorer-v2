@@ -100,6 +100,17 @@ type RawEvent = {
   rewardTokens?: string;
   rewardCut?: string;
   feeShare?: string;
+  // Ticket redemptions
+  recipient?: Ref;
+  faceValue?: string;
+  // Votes: aliased, since `voter` and `proposal` differ in type by event
+  pollVoter?: string;
+  choiceID?: string;
+  poll?: Ref;
+  treasuryVoter?: Ref;
+  support?: string;
+  weight?: string;
+  treasuryProposal?: Ref;
 };
 
 type RawProposal = {
@@ -617,6 +628,11 @@ export type ActivityEvent = {
   amount?: number;
   rewardCut?: number;
   feeShare?: number;
+  /** Votes: the choice as shown (Yes/No, For/Against/Abstain). */
+  choice?: string;
+  /** Poll address or treasury proposal id a vote or poll refers to. */
+  poll?: string;
+  proposal?: string;
 };
 
 const EVENT_FIELDS = /* GraphQL */ `
@@ -704,10 +720,44 @@ const EVENT_FIELDS = /* GraphQL */ `
       id
     }
   }
+  ... on WinningTicketRedeemedEvent {
+    recipient {
+      id
+    }
+    faceValue
+  }
+  ... on VoteEvent {
+    pollVoter: voter
+    choiceID
+    poll {
+      id
+    }
+  }
+  ... on TreasuryVoteEvent {
+    treasuryVoter: voter {
+      id
+    }
+    support
+    weight
+    treasuryProposal: proposal {
+      id
+    }
+  }
+  ... on PollCreatedEvent {
+    poll {
+      id
+    }
+  }
 `;
 
 function toEvent(e: RawEvent): ActivityEvent {
-  const amount = e.additionalAmount ?? e.amount ?? e.rewardTokens ?? undefined;
+  const amount =
+    e.additionalAmount ??
+    e.amount ??
+    e.rewardTokens ??
+    e.faceValue ??
+    e.weight ??
+    undefined;
   return {
     id: e.id,
     type: e.__typename.replace(/Event$/, ""),
@@ -715,12 +765,28 @@ function toEvent(e: RawEvent): ActivityEvent {
     timestamp: Number(e.timestamp),
     tx: e.transaction?.id ?? "",
     from: e.transaction?.from ?? "",
-    delegator: e.delegator?.id ?? e.oldDelegator?.id,
-    delegate: e.newDelegate?.id ?? e.delegate?.id ?? e.newDelegator?.id,
+    delegator:
+      e.delegator?.id ??
+      e.oldDelegator?.id ??
+      e.pollVoter?.toLowerCase() ??
+      e.treasuryVoter?.id,
+    delegate:
+      e.newDelegate?.id ??
+      e.delegate?.id ??
+      e.newDelegator?.id ??
+      e.recipient?.id,
     oldDelegate: e.oldDelegate?.id,
     amount: amount != null ? Number(amount) : undefined,
     rewardCut: e.rewardCut != null ? Number(e.rewardCut) / 1e4 : undefined,
     feeShare: e.feeShare != null ? Number(e.feeShare) / 1e4 : undefined,
+    choice:
+      e.choiceID != null
+        ? e.choiceID === "0"
+          ? "Yes"
+          : "No"
+        : e.support ?? undefined,
+    poll: e.poll?.id,
+    proposal: e.treasuryProposal?.id,
   };
 }
 
@@ -735,6 +801,11 @@ const EVENT_TYPES = [
   "TransferBondEvent",
   "TranscoderActivatedEvent",
   "TranscoderDeactivatedEvent",
+  "WinningTicketRedeemedEvent",
+  "NewRoundEvent",
+  "VoteEvent",
+  "TreasuryVoteEvent",
+  "PollCreatedEvent",
 ];
 
 const EVENTS = /* GraphQL */ `
@@ -805,6 +876,42 @@ export async function fetchOrchestratorUpdates(ids: string[], sinceTs: number) {
     since: sinceTs,
   });
   return transcoderUpdateEvents.map(toEvent);
+}
+
+/* ── Reward calls this round ─────────────────────────────────────────────── */
+
+const REWARD_PROGRESS = /* GraphQL */ `
+  query RewardProgress($round: String!) {
+    pools(first: 1000, where: { round: $round }) {
+      delegate {
+        id
+      }
+      rewardTokens
+    }
+  }
+`;
+
+export type RewardProgress = {
+  round: number;
+  /** Orchestrators with a pool this round, i.e. the active set. */
+  total: number;
+  called: number;
+  minted: number;
+};
+
+export async function fetchRewardProgress(
+  round: number
+): Promise<RewardProgress> {
+  const { pools } = await querySubgraph<{
+    pools: { delegate: { id: string }; rewardTokens: string | null }[];
+  }>(REWARD_PROGRESS, { round: String(round) });
+  const called = pools.filter((p) => p.rewardTokens != null);
+  return {
+    round,
+    total: pools.length,
+    called: called.length,
+    minted: called.reduce((s, p) => s + Number(p.rewardTokens), 0),
+  };
 }
 
 /* ── Governance ──────────────────────────────────────────────────────────── */

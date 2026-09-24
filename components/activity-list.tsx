@@ -10,13 +10,19 @@ import {
   Percent,
   RotateCcw,
   Sparkles,
+  Ticket,
+  Timer,
+  Vote,
   Wallet,
 } from "lucide-react";
+import Link from "next/link";
 
 import { Avatar, useIdentity } from "@/components/identity";
 import { Card, EmptyState } from "@/components/page";
+import { useNow } from "@/components/shell/round-clock";
 import { Skeleton } from "@/components/ui/misc";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/cn";
 import { txUrl } from "@/lib/config";
 import {
   formatETH,
@@ -44,6 +50,24 @@ function Name({ address }: { address?: string }) {
 function ActorAvatar({ address }: { address: string }) {
   const { avatar } = useIdentity(address);
   return <Avatar address={address} src={avatar} size={28} />;
+}
+
+function GovLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children: React.ReactNode;
+}) {
+  if (!href) return <span className="text-foreground">{children}</span>;
+  return (
+    <Link
+      href={href}
+      className="text-foreground underline-offset-4 hover:underline"
+    >
+      {children}
+    </Link>
+  );
 }
 
 function describe(e: ActivityEvent): {
@@ -178,6 +202,72 @@ function describe(e: ActivityEvent): {
           </>
         ),
       };
+    case "WinningTicketRedeemed":
+      return {
+        icon: Ticket,
+        actor: e.delegate,
+        text: (
+          <>
+            <Name address={e.delegate} /> earned {formatETH(e.amount ?? 0)} from
+            a winning ticket
+          </>
+        ),
+      };
+    case "NewRound":
+      return {
+        icon: Timer,
+        text: (
+          <>
+            Round{" "}
+            <span className="text-foreground">{e.round.toLocaleString()}</span>{" "}
+            started
+          </>
+        ),
+      };
+    case "Vote":
+      return {
+        icon: Vote,
+        actor: e.delegator,
+        text: (
+          <>
+            <Name address={e.delegator} /> voted{" "}
+            <span className="text-foreground">{e.choice}</span> on{" "}
+            <GovLink href={e.poll && `/governance/polls/${e.poll}`}>
+              an LIP poll
+            </GovLink>
+          </>
+        ),
+      };
+    case "TreasuryVote":
+      return {
+        icon: Vote,
+        actor: e.delegator,
+        text: (
+          <>
+            <Name address={e.delegator} /> voted{" "}
+            <span className="text-foreground">{e.choice}</span> on{" "}
+            <GovLink href={e.proposal && `/governance/proposals/${e.proposal}`}>
+              a treasury proposal
+            </GovLink>
+            {e.amount ? (
+              <> with {formatLPT(e.amount, { compact: true })}</>
+            ) : null}
+          </>
+        ),
+      };
+    case "PollCreated":
+      return {
+        icon: Vote,
+        text: (
+          <>
+            A new{" "}
+            <GovLink href={e.poll && `/governance/polls/${e.poll}`}>
+              LIP poll
+            </GovLink>{" "}
+            opened for voting
+          </>
+        ),
+      };
     default:
       return { icon: Sparkles, text: e.type };
   }
@@ -188,12 +278,17 @@ export function ActivityList({
   loading,
   emptyText = "No activity yet.",
   showActor = true,
+  fresh,
 }: {
   events?: ActivityEvent[];
   loading?: boolean;
   emptyText?: string;
   showActor?: boolean;
+  /** Ids that just arrived; they slide in with a brief highlight. */
+  fresh?: Set<string>;
 }) {
+  // Keep "2 minutes ago" moving on a page that stays open.
+  const nowMs = useNow(15_000);
   if (loading) {
     return (
       <Card className="divide-y divide-(--hairline)">
@@ -218,7 +313,13 @@ export function ActivityList({
       {events.map((e) => {
         const { icon: Icon, text, actor } = describe(e);
         return (
-          <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+          <div
+            key={e.id}
+            className={cn(
+              "flex items-center gap-3 px-4 py-3",
+              fresh?.has(e.id) && "animate-arrive"
+            )}
+          >
             {showActor && actor ? (
               <span className="relative flex shrink-0">
                 <ActorAvatar address={actor} />
@@ -245,7 +346,7 @@ export function ActivityList({
                 rel="noreferrer"
                 className="shrink-0 text-ui-caption whitespace-nowrap text-subtle-foreground hover:text-foreground"
               >
-                {formatRelativeTime(e.timestamp)}
+                {formatRelativeTime(e.timestamp, nowMs)}
               </a>
             </Tooltip>
           </div>
