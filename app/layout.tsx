@@ -16,7 +16,6 @@ export const metadata: Metadata = {
   title: { default: TITLE, template: `%s · ${TITLE}` },
   description: DESCRIPTION,
   applicationName: TITLE,
-  icons: { icon: "/icon.svg" },
   manifest: "/manifest.json",
   openGraph: {
     title: TITLE,
