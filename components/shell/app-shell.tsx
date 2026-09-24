@@ -143,7 +143,7 @@ function SidebarBody({
 
       <div className="flex flex-col gap-1 px-3 pb-3">
         <a
-          href="https://docs.livepeer.org/delegators/guides/bridge-lpt-to-arbitrum"
+          href="https://docs.livepeer.org/network/tutorials/delegate-your-first-lpt"
           target="_blank"
           rel="noreferrer"
           className="flex h-7 items-center gap-2.5 rounded-sm px-2 text-ui-caption text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
