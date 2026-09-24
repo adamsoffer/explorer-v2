@@ -1,0 +1,906 @@
+import { PoolHistory } from "@/lib/portfolio/compute";
+
+import { paginate, querySubgraph } from "./client";
+import { toPoolPoint } from "./portfolio";
+
+/* ── Raw subgraph shapes (numbers arrive as strings) ─────────────────────── */
+
+type Ref = { id: string } | null;
+
+type RawProtocol = {
+  currentRound: { id: string; startTimestamp: number };
+  lastInitializedRound: Ref;
+  roundLength: string;
+  totalActiveStake: string;
+  totalSupply: string;
+  participationRate: string;
+  inflation: string;
+  inflationChange: string;
+  targetBondingRate: string;
+  numActiveTranscoders: string;
+  activeTranscoderCount: string;
+  delegatorsCount: string;
+  totalVolumeETH: string;
+  totalVolumeUSD: string;
+  unbondingPeriod: string;
+  paused: boolean;
+};
+
+type RawRoundRow = {
+  id: string;
+  startBlock: string;
+  startTimestamp: number;
+  mintableTokens: string;
+  volumeETH: string;
+  newStake: string;
+};
+
+type RawDay = {
+  date: number;
+  volumeETH: string;
+  volumeUSD: string;
+  participationRate: string;
+  inflation: string;
+  totalActiveStake: string;
+  delegatorsCount: string;
+  activeTranscoderCount: string;
+};
+
+type RawWindowPool = {
+  round: { id: string };
+  rewardTokens: string | null;
+  cumulativeRewardFactor: string;
+};
+
+type RawTranscoder = {
+  id: string;
+  active: boolean;
+  status: string;
+  totalStake: string;
+  rewardCut: string;
+  feeShare: string;
+  rewardCutUpdateTimestamp: number;
+  feeShareUpdateTimestamp: number;
+  activationTimestamp: number;
+  lastRewardRound: Ref;
+  thirtyDayVolumeETH: string;
+  ninetyDayVolumeETH: string;
+  totalVolumeETH: string;
+  serviceURI: string | null;
+  delegator: { bondedAmount: string } | null;
+  delegators: { id: string }[] | null;
+  pools: RawWindowPool[] | null;
+  lifetimeRewardCommission?: string;
+  lifetimeFeeCommission?: string;
+};
+
+type RawDetailPool = RawWindowPool & {
+  id: string;
+  round: { id: string; startTimestamp: number };
+  cumulativeFeeFactor: string;
+  rewardCut: string;
+  feeShare: string;
+  totalStake: string;
+  fees: string;
+};
+
+type RawEvent = {
+  id: string;
+  __typename: string;
+  round: Ref;
+  timestamp: number;
+  transaction: { id: string; from: string } | null;
+  delegator?: Ref;
+  delegate?: Ref;
+  newDelegate?: Ref;
+  oldDelegate?: Ref;
+  oldDelegator?: Ref;
+  newDelegator?: Ref;
+  additionalAmount?: string;
+  amount?: string;
+  rewardTokens?: string;
+  rewardCut?: string;
+  feeShare?: string;
+};
+
+type RawProposal = {
+  id: string;
+  description: string;
+  voteStart: string;
+  voteEnd: string;
+  forVotes: string;
+  againstVotes: string;
+  abstainVotes: string;
+  totalVotes: string;
+  proposer: { id: string };
+};
+
+type RawPoll = {
+  id: string;
+  proposal: string;
+  endBlock: string;
+  quorum: string;
+  quota: string;
+  tally: { yes: string; no: string } | null;
+  votes: { id: string }[] | null;
+};
+
+/* ── Protocol & round clock ──────────────────────────────────────────────── */
+
+export type Protocol = {
+  currentRound: number;
+  roundStartTs: number;
+  roundLength: number;
+  lastInitializedRound: number;
+  totalActiveStake: number;
+  totalSupply: number;
+  participationRate: number;
+  /** Per-round inflation, in parts per billion */
+  inflation: number;
+  inflationChange: number;
+  targetBondingRate: number;
+  numActiveTranscoders: number;
+  activeTranscoderCount: number;
+  delegatorsCount: number;
+  totalVolumeETH: number;
+  totalVolumeUSD: number;
+  unbondingPeriod: number;
+  paused: boolean;
+  /** Seconds per L1 block, measured from recent rounds */
+  secondsPerBlock: number;
+  /** Nominal round duration, seconds */
+  roundSeconds: number;
+  recentRounds: {
+    round: number;
+    ts: number;
+    startBlock: number;
+    mintableTokens: number;
+    volumeETH: number;
+    newStake: number;
+  }[];
+};
+
+const PROTOCOL = /* GraphQL */ `
+  query Protocol {
+    protocol(id: "0") {
+      currentRound {
+        id
+        startTimestamp
+      }
+      lastInitializedRound {
+        id
+      }
+      roundLength
+      totalActiveStake
+      totalSupply
+      participationRate
+      inflation
+      inflationChange
+      targetBondingRate
+      numActiveTranscoders
+      activeTranscoderCount
+      delegatorsCount
+      totalVolumeETH
+      totalVolumeUSD
+      unbondingPeriod
+      paused
+    }
+    rounds(first: 31, orderBy: startBlock, orderDirection: desc) {
+      id
+      startBlock
+      startTimestamp
+      mintableTokens
+      volumeETH
+      newStake
+    }
+  }
+`;
+
+const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+export async function fetchProtocol(): Promise<Protocol> {
+  const { protocol: p, rounds } = await querySubgraph<{
+    protocol: RawProtocol;
+    rounds: RawRoundRow[];
+  }>(PROTOCOL);
+
+  const recentRounds = rounds
+    .map((r) => ({
+      round: Number(r.id),
+      ts: Number(r.startTimestamp),
+      startBlock: Number(r.startBlock),
+      mintableTokens: Number(r.mintableTokens),
+      volumeETH: Number(r.volumeETH),
+      newStake: Number(r.newStake),
+    }))
+    .sort((a, b) => a.round - b.round);
+
+  // Rounds are measured in L1 blocks. Calibrate block time from consecutive
+  // rounds so a late initialization stretches both sides of the ratio.
+  const samples: number[] = [];
+  for (let i = 1; i < recentRounds.length; i++) {
+    const a = recentRounds[i - 1];
+    const b = recentRounds[i];
+    if (b.round !== a.round + 1) continue;
+    const dt = b.ts - a.ts;
+    const db = b.startBlock - a.startBlock;
+    if (dt > 0 && db > 0) samples.push(dt / db);
+  }
+  const secondsPerBlock = Math.min(30, Math.max(6, median(samples) ?? 12));
+  const roundLength = Number(p.roundLength);
+
+  return {
+    currentRound: Number(p.currentRound.id),
+    roundStartTs: Number(p.currentRound.startTimestamp),
+    roundLength,
+    lastInitializedRound: Number(
+      p.lastInitializedRound?.id ?? p.currentRound.id
+    ),
+    totalActiveStake: Number(p.totalActiveStake),
+    totalSupply: Number(p.totalSupply),
+    participationRate: Number(p.participationRate) * 100,
+    inflation: Number(p.inflation),
+    inflationChange: Number(p.inflationChange),
+    targetBondingRate: Number(p.targetBondingRate) / 1e7,
+    numActiveTranscoders: Number(p.numActiveTranscoders),
+    activeTranscoderCount: Number(p.activeTranscoderCount),
+    delegatorsCount: Number(p.delegatorsCount),
+    totalVolumeETH: Number(p.totalVolumeETH),
+    totalVolumeUSD: Number(p.totalVolumeUSD),
+    unbondingPeriod: Number(p.unbondingPeriod),
+    paused: Boolean(p.paused),
+    secondsPerBlock,
+    roundSeconds: roundLength * secondsPerBlock,
+    recentRounds,
+  };
+}
+
+/* ── Daily network history ───────────────────────────────────────────────── */
+
+export type Day = {
+  date: number;
+  volumeETH: number;
+  volumeUSD: number;
+  participationRate: number;
+  inflation: number;
+  totalActiveStake: number;
+  delegatorsCount: number;
+  activeTranscoderCount: number;
+};
+
+const DAYS = /* GraphQL */ `
+  query Days($first: Int!) {
+    days(first: $first, orderBy: date, orderDirection: desc) {
+      date
+      volumeETH
+      volumeUSD
+      participationRate
+      inflation
+      totalActiveStake
+      delegatorsCount
+      activeTranscoderCount
+    }
+  }
+`;
+
+export async function fetchDays(first = 365): Promise<Day[]> {
+  const { days } = await querySubgraph<{ days: RawDay[] }>(DAYS, { first });
+  return days
+    .map((d) => ({
+      date: Number(d.date),
+      volumeETH: Number(d.volumeETH),
+      volumeUSD: Number(d.volumeUSD),
+      participationRate: Number(d.participationRate) * 100,
+      inflation: Number(d.inflation) / 1e7,
+      totalActiveStake: Number(d.totalActiveStake),
+      delegatorsCount: Number(d.delegatorsCount),
+      activeTranscoderCount: Number(d.activeTranscoderCount),
+    }))
+    .sort((a, b) => a.date - b.date);
+}
+
+/* ── Orchestrators ───────────────────────────────────────────────────────── */
+
+export type Orchestrator = {
+  id: string;
+  active: boolean;
+  status: string;
+  totalStake: number;
+  selfStake: number;
+  rewardCut: number;
+  feeShare: number;
+  rewardCutUpdateTimestamp: number;
+  feeShareUpdateTimestamp: number;
+  activationTimestamp: number;
+  lastRewardRound: number | null;
+  thirtyDayVolumeETH: number;
+  ninetyDayVolumeETH: number;
+  totalVolumeETH: number;
+  delegatorCount: number;
+  serviceURI: string | null;
+  /** Reward calls in the trailing window, out of `rewardWindow` rounds */
+  rewardCalls: number;
+  rewardWindow: number;
+  /** Realised delegator yield over the window, annualised (%) */
+  realizedApr: number | null;
+};
+
+const TRANSCODER_FIELDS = /* GraphQL */ `
+  id
+  active
+  status
+  totalStake
+  rewardCut
+  feeShare
+  rewardCutUpdateTimestamp
+  feeShareUpdateTimestamp
+  activationTimestamp
+  lastRewardRound {
+    id
+  }
+  thirtyDayVolumeETH
+  ninetyDayVolumeETH
+  totalVolumeETH
+  serviceURI
+  delegator {
+    bondedAmount
+  }
+  delegators(first: 1000) {
+    id
+  }
+`;
+
+const ORCHESTRATORS = /* GraphQL */ `
+  query Orchestrators($windowStart: Int!) {
+    transcoders(
+      where: { active: true }
+      first: 200
+      orderBy: totalStake
+      orderDirection: desc
+    ) {
+      ${TRANSCODER_FIELDS}
+      pools(first: 60, orderBy: id, orderDirection: desc, where: { round_: { startTimestamp_gte: $windowStart } }) {
+        round {
+          id
+        }
+        rewardTokens
+        cumulativeRewardFactor
+      }
+    }
+  }
+`;
+
+const WINDOW = 30;
+
+/** Start timestamp a little before the trailing reward window. */
+const windowStart = (p: Protocol) =>
+  Math.floor(p.roundStartTs - (WINDOW + 2) * p.roundSeconds);
+
+function rewardStats(
+  pools: {
+    round: { id: string };
+    rewardTokens: string | null;
+    cumulativeRewardFactor: string;
+  }[],
+  currentRound: number,
+  roundSeconds: number
+) {
+  // Completed rounds only: the current one may still get its call.
+  const window = pools
+    .map((p) => ({
+      round: Number(p.round.id),
+      called: p.rewardTokens != null,
+      crf: BigInt(p.cumulativeRewardFactor),
+    }))
+    .filter((p) => p.round < currentRound && p.round >= currentRound - WINDOW)
+    .sort((a, b) => a.round - b.round);
+
+  const rewardCalls = window.filter((p) => p.called).length;
+  let realizedApr: number | null = null;
+  if (window.length >= 2) {
+    const first = window[0];
+    const last = window[window.length - 1];
+    const span = last.round - first.round;
+    if (first.crf > 0n && span > 0) {
+      const growth = Number((last.crf * 10n ** 12n) / first.crf) / 1e12;
+      const perRound = Math.pow(growth, 1 / span) - 1;
+      const roundsPerYear = (365 * 86400) / roundSeconds;
+      realizedApr = (Math.pow(1 + perRound, roundsPerYear) - 1) * 100;
+    }
+  }
+  return {
+    rewardCalls,
+    rewardWindow: Math.min(WINDOW, window.length || WINDOW),
+    realizedApr,
+  };
+}
+
+function toOrchestrator(
+  t: RawTranscoder,
+  currentRound: number,
+  roundSeconds: number
+): Orchestrator {
+  return {
+    id: t.id,
+    active: t.active,
+    status: t.status,
+    totalStake: Number(t.totalStake),
+    selfStake: Number(t.delegator?.bondedAmount ?? 0),
+    rewardCut: Number(t.rewardCut) / 1e4,
+    feeShare: Number(t.feeShare) / 1e4,
+    rewardCutUpdateTimestamp: Number(t.rewardCutUpdateTimestamp),
+    feeShareUpdateTimestamp: Number(t.feeShareUpdateTimestamp),
+    activationTimestamp: Number(t.activationTimestamp),
+    lastRewardRound: t.lastRewardRound ? Number(t.lastRewardRound.id) : null,
+    thirtyDayVolumeETH: Number(t.thirtyDayVolumeETH),
+    ninetyDayVolumeETH: Number(t.ninetyDayVolumeETH),
+    totalVolumeETH: Number(t.totalVolumeETH),
+    delegatorCount: t.delegators?.length ?? 0,
+    serviceURI: t.serviceURI ?? null,
+    ...rewardStats(t.pools ?? [], currentRound, roundSeconds),
+  };
+}
+
+export async function fetchOrchestrators(
+  protocol: Protocol
+): Promise<Orchestrator[]> {
+  const { transcoders } = await querySubgraph<{ transcoders: RawTranscoder[] }>(
+    ORCHESTRATORS,
+    {
+      windowStart: windowStart(protocol),
+    }
+  );
+  return transcoders.map((t) =>
+    toOrchestrator(t, protocol.currentRound, protocol.roundSeconds)
+  );
+}
+
+/* ── One orchestrator ────────────────────────────────────────────────────── */
+
+export type OrchestratorDetail = Orchestrator & {
+  pools: {
+    round: number;
+    ts: number;
+    rewardTokens: number | null;
+    totalStake: number;
+    fees: number;
+    rewardCut: number;
+    feeShare: number;
+    /** Delegator yield that round, % */
+    yieldPct: number | null;
+  }[];
+  delegatorList: { id: string; bondedAmount: number; startRound: number }[];
+  lifetimeRewardCommission: number;
+  lifetimeFeeCommission: number;
+};
+
+const ORCHESTRATOR = /* GraphQL */ `
+  query Orchestrator($id: ID!, $windowStart: Int!) {
+    transcoder(id: $id) {
+      ${TRANSCODER_FIELDS}
+      lifetimeRewardCommission
+      lifetimeFeeCommission
+      pools(first: 60, orderBy: id, orderDirection: desc, where: { round_: { startTimestamp_gte: $windowStart } }) {
+        round {
+          id
+        }
+        rewardTokens
+        cumulativeRewardFactor
+      }
+    }
+    delegators(
+      where: { delegate: $id, bondedAmount_gt: "0" }
+      first: 1000
+      orderBy: bondedAmount
+      orderDirection: desc
+    ) {
+      id
+      bondedAmount
+      startRound
+    }
+  }
+`;
+
+const ORCHESTRATOR_POOLS = /* GraphQL */ `
+  query OrchestratorPools($delegate: String!, $first: Int!, $lastId: String!) {
+    pools(
+      where: { delegate: $delegate, id_gt: $lastId }
+      first: $first
+      orderBy: id
+    ) {
+      id
+      round {
+        id
+        startTimestamp
+      }
+      cumulativeRewardFactor
+      cumulativeFeeFactor
+      rewardTokens
+      rewardCut
+      feeShare
+      totalStake
+      fees
+    }
+  }
+`;
+
+export async function fetchOrchestrator(
+  id: string,
+  protocol: Protocol
+): Promise<OrchestratorDetail | null> {
+  const address = id.toLowerCase();
+  const [data, rawPools] = await Promise.all([
+    querySubgraph<{
+      transcoder: RawTranscoder | null;
+      delegators: { id: string; bondedAmount: string; startRound: string }[];
+    }>(ORCHESTRATOR, {
+      id: address,
+      windowStart: windowStart(protocol),
+    }),
+    paginate<RawDetailPool>(ORCHESTRATOR_POOLS, "pools", { delegate: address }),
+  ]);
+  if (!data.transcoder) return null;
+
+  const history = new PoolHistory(rawPools.map(toPoolPoint));
+  const pools = rawPools
+    .map((p) => {
+      const round = Number(p.round.id);
+      const crf = history.at(round)?.crf ?? 0n;
+      const prev = history.at(round - 1)?.crf ?? 0n;
+      const yieldPct =
+        prev > 0n
+          ? (Number(((crf - prev) * 10n ** 12n) / prev) / 1e12) * 100
+          : null;
+      return {
+        round,
+        ts: Number(p.round.startTimestamp),
+        rewardTokens: p.rewardTokens == null ? null : Number(p.rewardTokens),
+        totalStake: Number(p.totalStake),
+        fees: Number(p.fees),
+        rewardCut: Number(p.rewardCut) / 1e4,
+        feeShare: Number(p.feeShare) / 1e4,
+        yieldPct,
+      };
+    })
+    .sort((a, b) => a.round - b.round);
+
+  return {
+    ...toOrchestrator(
+      data.transcoder,
+      protocol.currentRound,
+      protocol.roundSeconds
+    ),
+    pools,
+    delegatorCount: data.delegators.length,
+    delegatorList: data.delegators.map((d) => ({
+      id: d.id,
+      bondedAmount: Number(d.bondedAmount),
+      startRound: Number(d.startRound),
+    })),
+    lifetimeRewardCommission:
+      Number(data.transcoder.lifetimeRewardCommission) / 1e18,
+    lifetimeFeeCommission: Number(data.transcoder.lifetimeFeeCommission) / 1e18,
+  };
+}
+
+/* ── Activity ────────────────────────────────────────────────────────────── */
+
+export type ActivityEvent = {
+  id: string;
+  type: string;
+  round: number;
+  timestamp: number;
+  tx: string;
+  from: string;
+  delegator?: string;
+  delegate?: string;
+  oldDelegate?: string;
+  amount?: number;
+  rewardCut?: number;
+  feeShare?: number;
+};
+
+const EVENT_FIELDS = /* GraphQL */ `
+  id
+  __typename
+  round {
+    id
+  }
+  timestamp
+  transaction {
+    id
+    from
+  }
+  ... on BondEvent {
+    delegator {
+      id
+    }
+    newDelegate {
+      id
+    }
+    oldDelegate {
+      id
+    }
+    additionalAmount
+  }
+  ... on UnbondEvent {
+    delegate {
+      id
+    }
+    delegator {
+      id
+    }
+    amount
+  }
+  ... on RebondEvent {
+    delegate {
+      id
+    }
+    delegator {
+      id
+    }
+    amount
+  }
+  ... on TranscoderUpdateEvent {
+    delegate {
+      id
+    }
+    rewardCut
+    feeShare
+  }
+  ... on RewardEvent {
+    delegate {
+      id
+    }
+    rewardTokens
+  }
+  ... on WithdrawStakeEvent {
+    delegator {
+      id
+    }
+    amount
+  }
+  ... on WithdrawFeesEvent {
+    delegator {
+      id
+    }
+    amount
+  }
+  ... on TransferBondEvent {
+    oldDelegator {
+      id
+    }
+    newDelegator {
+      id
+    }
+    amount
+  }
+  ... on TranscoderActivatedEvent {
+    delegate {
+      id
+    }
+  }
+  ... on TranscoderDeactivatedEvent {
+    delegate {
+      id
+    }
+  }
+`;
+
+function toEvent(e: RawEvent): ActivityEvent {
+  const amount = e.additionalAmount ?? e.amount ?? e.rewardTokens ?? undefined;
+  return {
+    id: e.id,
+    type: e.__typename.replace(/Event$/, ""),
+    round: Number(e.round?.id ?? 0),
+    timestamp: Number(e.timestamp),
+    tx: e.transaction?.id ?? "",
+    from: e.transaction?.from ?? "",
+    delegator: e.delegator?.id ?? e.oldDelegator?.id,
+    delegate: e.newDelegate?.id ?? e.delegate?.id ?? e.newDelegator?.id,
+    oldDelegate: e.oldDelegate?.id,
+    amount: amount != null ? Number(amount) : undefined,
+    rewardCut: e.rewardCut != null ? Number(e.rewardCut) / 1e4 : undefined,
+    feeShare: e.feeShare != null ? Number(e.feeShare) / 1e4 : undefined,
+  };
+}
+
+const EVENT_TYPES = [
+  "BondEvent",
+  "UnbondEvent",
+  "RebondEvent",
+  "TranscoderUpdateEvent",
+  "RewardEvent",
+  "WithdrawStakeEvent",
+  "WithdrawFeesEvent",
+  "TransferBondEvent",
+  "TranscoderActivatedEvent",
+  "TranscoderDeactivatedEvent",
+];
+
+const EVENTS = /* GraphQL */ `
+  query Events($first: Int!) {
+    transactions(first: $first, orderBy: timestamp, orderDirection: desc) {
+      events {
+        ${EVENT_FIELDS}
+      }
+    }
+  }
+`;
+
+export async function fetchEvents(first = 100): Promise<ActivityEvent[]> {
+  const { transactions } = await querySubgraph<{
+    transactions: { events: RawEvent[] | null }[];
+  }>(EVENTS, { first });
+  return transactions
+    .flatMap((t) => t.events ?? [])
+    .filter((e) => EVENT_TYPES.includes(e.__typename))
+    .map(toEvent);
+}
+
+const ACCOUNT_EVENTS = /* GraphQL */ `
+  query AccountEvents($ids: [String!]!, $first: Int!) {
+    bond: bondEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { delegator_in: $ids }) { ${EVENT_FIELDS} }
+    unbond: unbondEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { delegator_in: $ids }) { ${EVENT_FIELDS} }
+    rebond: rebondEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { delegator_in: $ids }) { ${EVENT_FIELDS} }
+    withdrawStake: withdrawStakeEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { delegator_in: $ids }) { ${EVENT_FIELDS} }
+    withdrawFees: withdrawFeesEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { delegator_in: $ids }) { ${EVENT_FIELDS} }
+  }
+`;
+
+export async function fetchAccountEvents(
+  ids: string[],
+  first = 50
+): Promise<ActivityEvent[]> {
+  const data = await querySubgraph<Record<string, RawEvent[]>>(ACCOUNT_EVENTS, {
+    ids: ids.map((i) => i.toLowerCase()),
+    first,
+  });
+  return Object.values(data)
+    .flat()
+    .map(toEvent)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, first);
+}
+
+const ORCHESTRATOR_UPDATES = /* GraphQL */ `
+  query OrchestratorUpdates($ids: [String!]!, $since: Int!) {
+    transcoderUpdateEvents(
+      first: 100
+      orderBy: timestamp
+      orderDirection: desc
+      where: { delegate_in: $ids, timestamp_gte: $since }
+    ) {
+      ${EVENT_FIELDS}
+    }
+  }
+`;
+
+/** Fee/reward cut changes for orchestrators — the portfolio's early warnings. */
+export async function fetchOrchestratorUpdates(ids: string[], sinceTs: number) {
+  if (!ids.length) return [];
+  const { transcoderUpdateEvents } = await querySubgraph<{
+    transcoderUpdateEvents: RawEvent[];
+  }>(ORCHESTRATOR_UPDATES, {
+    ids: ids.map((i) => i.toLowerCase()),
+    since: sinceTs,
+  });
+  return transcoderUpdateEvents.map(toEvent);
+}
+
+/* ── Governance ──────────────────────────────────────────────────────────── */
+
+export type TreasuryProposal = {
+  id: string;
+  title: string;
+  description: string;
+  proposer: string;
+  voteStart: number;
+  voteEnd: number;
+  forVotes: number;
+  againstVotes: number;
+  abstainVotes: number;
+  totalVotes: number;
+};
+
+export type Poll = {
+  id: string;
+  proposal: string;
+  endBlock: number;
+  quorum: number;
+  quota: number;
+  yes: number;
+  no: number;
+  voteCount: number;
+};
+
+const GOVERNANCE = /* GraphQL */ `
+  query Governance {
+    treasuryProposals(first: 100, orderBy: voteStart, orderDirection: desc) {
+      id
+      description
+      voteStart
+      voteEnd
+      forVotes
+      againstVotes
+      abstainVotes
+      totalVotes
+      proposer {
+        id
+      }
+    }
+    polls(first: 100, orderBy: endBlock, orderDirection: desc) {
+      id
+      proposal
+      endBlock
+      quorum
+      quota
+      tally {
+        yes
+        no
+      }
+      votes(first: 1000) {
+        id
+      }
+    }
+  }
+`;
+
+/**
+ * Title of a proposal description: the front-matter `title` when present,
+ * otherwise the first non-empty line with any heading marks removed.
+ */
+export function proposalTitle(description: string) {
+  let body = description;
+  const fm = /^---\s*\n([\s\S]*?)\n---\s*(\n|$)/.exec(description);
+  if (fm) {
+    const title = /^title:\s*["']?(.+?)["']?\s*$/m.exec(fm[1])?.[1];
+    if (title) return title;
+    body = description.slice(fm[0].length);
+  }
+  const line = body
+    .split("\n")
+    .map((l) => l.trim())
+    .find(Boolean);
+  return (line ?? "Untitled proposal").replace(/^#+\s*/, "");
+}
+
+export async function fetchGovernance() {
+  const { treasuryProposals, polls } = await querySubgraph<{
+    treasuryProposals: RawProposal[];
+    polls: RawPoll[];
+  }>(GOVERNANCE);
+  return {
+    proposals: treasuryProposals.map(
+      (p): TreasuryProposal => ({
+        id: p.id,
+        title: proposalTitle(p.description),
+        description: p.description,
+        proposer: p.proposer.id,
+        voteStart: Number(p.voteStart),
+        voteEnd: Number(p.voteEnd),
+        forVotes: Number(p.forVotes),
+        againstVotes: Number(p.againstVotes),
+        abstainVotes: Number(p.abstainVotes),
+        totalVotes: Number(p.totalVotes),
+      })
+    ),
+    polls: polls.map(
+      (p): Poll => ({
+        id: p.id,
+        proposal: p.proposal,
+        endBlock: Number(p.endBlock),
+        quorum: Number(p.quorum) / 1e4,
+        quota: Number(p.quota) / 1e4,
+        yes: Number(p.tally?.yes ?? 0),
+        no: Number(p.tally?.no ?? 0),
+        voteCount: p.votes?.length ?? 0,
+      })
+    ),
+  };
+}

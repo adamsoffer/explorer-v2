@@ -1,0 +1,123 @@
+"use client";
+
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+
+import {
+  fetchAccountEvents,
+  fetchDays,
+  fetchEvents,
+  fetchGovernance,
+  fetchOrchestrator,
+  fetchOrchestrators,
+  fetchOrchestratorUpdates,
+  fetchProtocol,
+} from "@/lib/subgraph/network";
+import { fetchPortfolio } from "@/lib/subgraph/portfolio";
+
+const MINUTE = 60_000;
+
+export function useProtocol() {
+  return useQuery({
+    queryKey: ["protocol"],
+    queryFn: fetchProtocol,
+    staleTime: MINUTE,
+    refetchInterval: MINUTE,
+  });
+}
+
+export function usePortfolio(addresses: string[]) {
+  const key = [...addresses].map((a) => a.toLowerCase()).sort();
+  return useQuery({
+    queryKey: ["portfolio", key],
+    queryFn: () => fetchPortfolio(key),
+    enabled: key.length > 0,
+    staleTime: 5 * MINUTE,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useOrchestrators() {
+  const { data: protocol } = useProtocol();
+  return useQuery({
+    queryKey: ["orchestrators", protocol?.currentRound],
+    queryFn: () => fetchOrchestrators(protocol!),
+    enabled: Boolean(protocol),
+    staleTime: 5 * MINUTE,
+  });
+}
+
+export function useOrchestrator(id: string) {
+  const { data: protocol } = useProtocol();
+  return useQuery({
+    queryKey: ["orchestrator", id.toLowerCase(), protocol?.currentRound],
+    queryFn: () => fetchOrchestrator(id, protocol!),
+    enabled: Boolean(protocol),
+    staleTime: 5 * MINUTE,
+  });
+}
+
+export function useDays(first = 365) {
+  return useQuery({
+    queryKey: ["days", first],
+    queryFn: () => fetchDays(first),
+    staleTime: 30 * MINUTE,
+  });
+}
+
+export function useEvents(first = 100) {
+  return useQuery({
+    queryKey: ["events", first],
+    queryFn: () => fetchEvents(first),
+    staleTime: MINUTE,
+    refetchInterval: MINUTE,
+  });
+}
+
+export function useAccountEvents(ids: string[], first = 50) {
+  const key = [...ids].map((a) => a.toLowerCase()).sort();
+  return useQuery({
+    queryKey: ["account-events", key, first],
+    queryFn: () => fetchAccountEvents(key, first),
+    enabled: key.length > 0,
+    staleTime: MINUTE,
+  });
+}
+
+export function useOrchestratorUpdates(ids: string[], sinceTs: number) {
+  const key = [...new Set(ids.map((a) => a.toLowerCase()))].sort();
+  return useQuery({
+    queryKey: ["orchestrator-updates", key, Math.floor(sinceTs / 3600)],
+    queryFn: () => fetchOrchestratorUpdates(key, sinceTs),
+    enabled: key.length > 0,
+    staleTime: 10 * MINUTE,
+  });
+}
+
+export function useGovernance() {
+  return useQuery({
+    queryKey: ["governance"],
+    queryFn: fetchGovernance,
+    staleTime: 5 * MINUTE,
+  });
+}
+
+/** LPT and ETH in USD. Non-critical: every caller renders without it. */
+export function usePrices() {
+  return useQuery({
+    queryKey: ["prices"],
+    queryFn: async () => {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=livepeer,ethereum&vs_currencies=usd&include_24hr_change=true"
+      );
+      if (!res.ok) throw new Error("price unavailable");
+      const json = await res.json();
+      return {
+        lpt: json?.livepeer?.usd as number | undefined,
+        lptChange24h: json?.livepeer?.usd_24h_change as number | undefined,
+        eth: json?.ethereum?.usd as number | undefined,
+      };
+    },
+    staleTime: 5 * MINUTE,
+    retry: 1,
+  });
+}
