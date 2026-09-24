@@ -194,7 +194,7 @@ function OrchestratorTable() {
   return (
     <>
       {moving && (
-        <div className="mb-6 flex items-center gap-3 rounded-md border border-hairline bg-muted px-4 py-3">
+        <div className="mb-6 flex items-center gap-3 rounded-md border border-hairline bg-surface px-4 py-3">
           <ArrowRightLeft className="size-4 text-muted-foreground" />
           <p className="flex-1 text-ui-body text-muted-foreground">
             Choose the orchestrator to move your stake to. Your full position
@@ -309,7 +309,7 @@ function OrchestratorTable() {
             <table className="w-full min-w-[940px] text-left text-ui-body">
               <thead>
                 <tr className="border-b border-hairline text-ui-caption">
-                  <th className="sticky left-0 z-10 bg-muted px-3 py-2.5 pl-4 font-normal text-muted-foreground">
+                  <th className="sticky left-0 z-10 bg-surface px-3 py-2.5 pl-4 font-normal text-muted-foreground">
                     Orchestrator
                   </th>
                   <SortHeader
@@ -396,7 +396,7 @@ function OrchestratorTable() {
                       key={o.id}
                       className="group border-b border-hairline transition-colors last:border-0 hover:bg-hover/60"
                     >
-                      <td className="sticky left-0 z-10 bg-muted px-3 py-3 pl-1 group-hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_2.5%)]">
+                      <td className="sticky left-0 z-10 bg-surface px-3 py-3 pl-1 group-hover:bg-[color-mix(in_oklch,var(--surface),var(--foreground)_2.5%)]">
                         <NameCell o={o} rank={rank} />
                       </td>
                       <td className="px-3 py-3 text-right">

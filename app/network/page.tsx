@@ -325,14 +325,13 @@ function RecentRounds({ protocol }: { protocol?: Protocol }) {
         description="The last ten rounds, newest first"
       />
       <Card className="overflow-x-auto">
-        <table className="w-full min-w-[600px] text-left">
+        <table className="w-full min-w-[520px] text-left">
           <thead>
             <tr className="border-b border-hairline text-ui-caption text-muted-foreground">
               <th className="px-4 py-2.5 font-normal">Round</th>
               <th className="px-4 py-2.5 font-normal">Started</th>
               <th className="px-4 py-2.5 text-right font-normal">Mintable</th>
               <th className="px-4 py-2.5 text-right font-normal">Fee volume</th>
-              <th className="px-4 py-2.5 text-right font-normal">New stake</th>
             </tr>
           </thead>
           <tbody>
@@ -342,7 +341,7 @@ function RecentRounds({ protocol }: { protocol?: Protocol }) {
                     key={i}
                     className="border-b border-hairline last:border-0"
                   >
-                    {Array.from({ length: 5 }).map((__, j) => (
+                    {Array.from({ length: 4 }).map((__, j) => (
                       <td key={j} className="px-4 py-3">
                         <Skeleton
                           className={
@@ -385,15 +384,6 @@ function RecentRounds({ protocol }: { protocol?: Protocol }) {
                         }
                       >
                         {formatETH(r.volumeETH)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums">
-                      <span
-                        className={
-                          r.newStake > 0 ? undefined : "text-muted-foreground"
-                        }
-                      >
-                        {formatLPT(r.newStake)}
                       </span>
                     </td>
                   </tr>

@@ -32,7 +32,6 @@ type RawRoundRow = {
   startTimestamp: number;
   mintableTokens: string;
   volumeETH: string;
-  newStake: string;
 };
 
 type RawDay = {
@@ -156,7 +155,6 @@ export type Protocol = {
     startBlock: number;
     mintableTokens: number;
     volumeETH: number;
-    newStake: number;
   }[];
 };
 
@@ -191,7 +189,6 @@ const PROTOCOL = /* GraphQL */ `
       startTimestamp
       mintableTokens
       volumeETH
-      newStake
     }
   }
 `;
@@ -216,7 +213,6 @@ export async function fetchProtocol(): Promise<Protocol> {
       startBlock: Number(r.startBlock),
       mintableTokens: Number(r.mintableTokens),
       volumeETH: Number(r.volumeETH),
-      newStake: Number(r.newStake),
     }))
     .sort((a, b) => a.round - b.round);
 

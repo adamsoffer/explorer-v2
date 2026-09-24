@@ -272,7 +272,6 @@ const resolvers = {
           startTimestamp: r.startTimestamp,
           mintableTokens: r.mintableTokens,
           volumeETH: r.volumeETH,
-          newStake: r.newStake,
         })),
     };
   },

@@ -83,7 +83,7 @@ function GovernanceLists() {
         options={TABS}
         className="mb-8"
       />
-      {tab === "proposals" ? <Proposals /> : <Polls />}
+      <div>{tab === "proposals" ? <Proposals /> : <Polls />}</div>
     </>
   );
 }

@@ -48,7 +48,12 @@
   --series-6: #008300;
   --series-7: #9085e9;
   --series-other: rgba(255, 255, 255, 0.28);
-  --hairline: color-mix(in oklch, var(--border) 60%, transparent);
+  /* Surfaces sit one clear step above the black page, with a full-strength
+     edge and a faint top highlight, so cards read as lifted rather than
+     dissolving into the background. */
+  --surface: oklch(0.19 0 0);
+  --surface-highlight: inset 0 1px 0 oklch(1 0 0 / 5%);
+  --hairline: var(--border);
   --hover: color-mix(in oklch, var(--foreground) 4%, transparent);
   --active: color-mix(in oklch, var(--foreground) 7%, transparent);
   --subtle-foreground: color-mix(in oklch, var(--foreground) 50%, transparent);
@@ -94,6 +99,8 @@ html[data-theme="light"] {
   --series-6: #008300;
   --series-7: #4a3aa7;
   --series-other: rgba(24, 24, 27, 0.3);
+  --surface: var(--muted);
+  --surface-highlight: 0 0 #0000;
   --hairline: color-mix(in oklch, var(--border) 80%, transparent);
   --hover: color-mix(in oklch, var(--foreground) 5%, transparent);
   --active: color-mix(in oklch, var(--foreground) 8%, transparent);
@@ -127,6 +134,7 @@ html[data-theme="light"] {
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-hairline: var(--hairline);
+  --color-surface: var(--surface);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
@@ -286,7 +294,8 @@ textarea {
   /* The console card: set into the page, hairline edge, no shadow. */
   .surface {
     border: 1px solid var(--hairline);
-    background-color: var(--muted);
+    background-color: var(--surface);
+    box-shadow: var(--surface-highlight);
     border-radius: var(--radius-md);
   }
 }

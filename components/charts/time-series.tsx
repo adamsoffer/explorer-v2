@@ -186,7 +186,7 @@ export function TimeSeriesChart({
               activeDot={{
                 r: 4,
                 fill: color,
-                stroke: "var(--muted)",
+                stroke: "var(--surface)",
                 strokeWidth: 2,
               }}
               isAnimationActive={false}

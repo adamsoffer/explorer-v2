@@ -92,9 +92,7 @@ export function Section({
   className,
   ...props
 }: React.ComponentProps<"section">) {
-  return (
-    <section className={cn("mt-10 first-of-type:mt-0", className)} {...props} />
-  );
+  return <section className={cn("mt-10 first:mt-0", className)} {...props} />;
 }
 
 export function Card({ className, ...props }: React.ComponentProps<"div">) {
@@ -110,7 +108,7 @@ export function KpiStrip({
   return (
     <div
       className={cn(
-        "grid grid-cols-2 gap-px overflow-hidden rounded-md border border-hairline bg-hairline [&>*]:bg-muted",
+        "grid grid-cols-2 gap-px overflow-hidden rounded-md border border-hairline bg-hairline shadow-(--surface-highlight) [&>*]:bg-surface",
         cols === 4 && "lg:grid-cols-4",
         cols === 3 && "sm:grid-cols-3",
         className
