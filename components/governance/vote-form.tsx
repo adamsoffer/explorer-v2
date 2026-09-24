@@ -75,6 +75,7 @@ export function VoteForm({
     refreshWhenIndexed(queryClient, receipt.data?.blockNumber, [
       ["governance"],
       ["events"],
+      ["votes"],
     ]).then((indexed) =>
       toast.success(successTitle, {
         id,

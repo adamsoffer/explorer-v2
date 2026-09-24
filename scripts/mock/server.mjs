@@ -201,6 +201,74 @@ function shapeEvent(e) {
 
 /* ── Resolvers (by operation name) ───────────────────────────────────────── */
 
+/* ── Governance votes (derived deterministically from each tally) ───────── */
+
+function seeded(key) {
+  let h = 2166136261;
+  for (const c of String(key)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+}
+const hex = (rnd, n) =>
+  Array.from({ length: n }, () => Math.floor(rnd() * 16).toString(16)).join("");
+
+const REASONS = [
+  "Supporting this. The milestones are clear and the team has delivered before.",
+  "Against for now: the budget is large relative to the treasury and the reporting cadence is vague. Happy to revisit with quarterly check-ins.",
+  "Abstaining until the SPE publishes its previous quarter's spend.",
+  "This directly benefits orchestrators and the delegators who back them. Voting for.",
+];
+
+/**
+ * Voters for a tally: mostly active orchestrators (by stake), then some
+ * delegators. Choices follow the tally's proportions and weights are scaled
+ * so each choice sums to its tally.
+ */
+function mockVoters(key, count, buckets) {
+  const rnd = seeded(key);
+  const active = f.transcoders
+    .filter((t) => t.active)
+    .sort((a, b) => Number(b.totalStake) - Number(a.totalStake));
+  const delegators = [...f.delegators.values()].filter(
+    (d) => Number(d.bondedAmount) > 0
+  );
+  const total = buckets.reduce((s, b) => s + b.value, 0);
+  if (!count || total <= 0) return [];
+  const voters = [];
+  const orchCount = Math.min(active.length, Math.round(count * 0.6));
+  for (const t of active) {
+    if (voters.length >= orchCount) break;
+    if (rnd() < 0.72)
+      voters.push({ id: t.id, stake: Number(t.totalStake), orch: true });
+  }
+  while (voters.length < count && delegators.length) {
+    const d = delegators[Math.floor(rnd() * delegators.length)];
+    if (!voters.some((v) => v.id === d.id))
+      voters.push({ id: d.id, stake: Number(d.bondedAmount), orch: false });
+  }
+  for (const v of voters) {
+    let r = rnd() * total;
+    v.choice = buckets.find((b) => (r -= b.value) <= 0)?.key ?? buckets[0].key;
+  }
+  for (const b of buckets) {
+    const group = voters.filter((v) => v.choice === b.key);
+    const sum = group.reduce((s, v) => s + v.stake, 0);
+    for (const v of group) v.weight = sum > 0 ? (v.stake / sum) * b.value : 0;
+  }
+  return voters.map((v) => ({
+    ...v,
+    timestamp: Math.floor(f.now - rnd() * 6 * 86400),
+    tx: "0x" + hex(rnd, 64),
+    reason:
+      !v.orch || rnd() > 0.3
+        ? null
+        : REASONS[Math.floor(rnd() * REASONS.length)],
+  }));
+}
+
 const resolvers = {
   Delegators: ({ ids }) => ({
     protocol: { currentRound: { id: String(f.protocol.currentRound) } },
@@ -367,6 +435,62 @@ const resolvers = {
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 100)
         .map(shapeEvent),
+    };
+  },
+
+  VoterDelegates: ({ ids }) => ({
+    delegators: lower(ids).flatMap((id) => {
+      if (transcoderById.has(id)) return [{ id, delegate: { id } }];
+      const d = f.delegators.get(id);
+      return d ? [{ id, delegate: ref(d.delegate) }] : [];
+    }),
+  }),
+
+  PollVotes: ({ poll }) => {
+    const p = f.polls.find((x) => x.id === String(poll).toLowerCase());
+    const voters = p
+      ? mockVoters(p.id, p.votes.length, [
+          { key: "Yes", value: Number(p.tally?.yes ?? 0) },
+          { key: "No", value: Number(p.tally?.no ?? 0) },
+        ])
+      : [];
+    return {
+      votes: voters.map((v) => ({
+        voter: v.id,
+        voteStake: v.weight.toFixed(8),
+        nonVoteStake: "0",
+        choiceID: v.choice,
+        registeredTranscoder: v.orch,
+      })),
+      voteEvents: voters.map((v) => ({
+        voter: v.id,
+        timestamp: v.timestamp,
+        transaction: { id: v.tx },
+      })),
+    };
+  },
+
+  ProposalVotes: ({ proposal }) => {
+    const p = f.treasuryProposals.find((x) => x.id === String(proposal));
+    const voters = p
+      ? mockVoters(p.id, Number(p.totalVotes) > 0 ? 48 : 0, [
+          { key: "For", value: Number(p.forVotes) },
+          { key: "Against", value: Number(p.againstVotes) },
+          { key: "Abstain", value: Number(p.abstainVotes) },
+        ])
+      : [];
+    return {
+      treasuryVotes: voters.map((v) => ({
+        voter: { id: v.id },
+        support: v.choice,
+        weight: v.weight.toFixed(8),
+        reason: v.reason,
+      })),
+      treasuryVoteEvents: voters.map((v) => ({
+        voter: { id: v.id },
+        timestamp: v.timestamp,
+        transaction: { id: v.tx },
+      })),
     };
   },
 

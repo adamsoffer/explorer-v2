@@ -10,7 +10,9 @@ import {
   DetailLayout,
   DetailList,
   DetailSkeleton,
+  DetailTabs,
   RailSection,
+  useDetailTab,
 } from "@/components/governance/detail";
 import { PlainMarkdown } from "@/components/governance/markdown";
 import {
@@ -33,19 +35,21 @@ import {
   TallyBar,
   TallyLegend,
 } from "@/components/governance/tally";
+import { VotesPanel } from "@/components/governance/votes";
 import { CopyButton, Identity } from "@/components/identity";
-import {
-  Card,
-  EmptyState,
-  ErrorNotice,
-  Page,
-  SectionHeader,
-} from "@/components/page";
+import { Card, EmptyState, ErrorNotice, Page } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/misc";
 import { formatLPT, shortAddress } from "@/lib/format";
-import { useGovernance, useProtocol } from "@/lib/hooks/queries";
+import {
+  useGovernance,
+  useOrchestrators,
+  useProposalVotes,
+  useProtocol,
+} from "@/lib/hooks/queries";
+
+const TABS = ["description", "votes"] as const;
 import type { Protocol } from "@/lib/subgraph/network";
 
 /** Exact start time for recent rounds, otherwise an estimate from round length. */
@@ -64,6 +68,9 @@ export default function ProposalPage() {
   const nowMs = useNow(30_000);
   const proposal = governance.data?.proposals.find((p) => p.id === id);
   const chainState = useProposalState(proposal);
+  const [tab, setTab] = useDetailTab(TABS, "description");
+  const votes = useProposalVotes(proposal ? proposal.id : undefined);
+  const orchestrators = useOrchestrators();
 
   if (governance.error || protocol.error) {
     return (
@@ -208,16 +215,40 @@ export default function ProposalPage() {
         }
         main={
           <>
-            <SectionHeader title="Description" />
-            <Card className="p-5 sm:p-6">
-              {body ? (
-                <PlainMarkdown source={body} />
-              ) : (
-                <p className="text-ui-body text-muted-foreground">
-                  This proposal has no description beyond its title.
-                </p>
-              )}
-            </Card>
+            <DetailTabs
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "description", label: "Description" },
+                {
+                  value: "votes",
+                  label: votes.data
+                    ? `Votes · ${votes.data.length.toLocaleString()}`
+                    : "Votes",
+                },
+              ]}
+            />
+            {tab === "votes" ? (
+              <VotesPanel
+                votes={votes.data}
+                isLoading={votes.isLoading}
+                error={votes.error}
+                onRetry={() => votes.refetch()}
+                series={series}
+                orchestrators={orchestrators.data}
+                ended={phase === "ended"}
+              />
+            ) : (
+              <Card className="p-5 sm:p-6">
+                {body ? (
+                  <PlainMarkdown source={body} />
+                ) : (
+                  <p className="text-ui-body text-muted-foreground">
+                    This proposal has no description beyond its title.
+                  </p>
+                )}
+              </Card>
+            )}
           </>
         }
       />

@@ -13,6 +13,7 @@ import {
   fetchProtocol,
 } from "@/lib/subgraph/network";
 import { fetchPortfolio } from "@/lib/subgraph/portfolio";
+import { fetchPollVotes, fetchProposalVotes } from "@/lib/subgraph/votes";
 
 const MINUTE = 60_000;
 
@@ -98,6 +99,24 @@ export function useGovernance() {
     queryKey: ["governance"],
     queryFn: fetchGovernance,
     staleTime: 5 * MINUTE,
+  });
+}
+
+export function usePollVotes(poll: string | undefined) {
+  return useQuery({
+    queryKey: ["votes", "poll", poll],
+    queryFn: () => fetchPollVotes(poll!),
+    enabled: Boolean(poll),
+    staleTime: MINUTE,
+  });
+}
+
+export function useProposalVotes(proposal: string | undefined) {
+  return useQuery({
+    queryKey: ["votes", "proposal", proposal],
+    queryFn: () => fetchProposalVotes(proposal!),
+    enabled: Boolean(proposal),
+    staleTime: MINUTE,
   });
 }
 

@@ -10,7 +10,9 @@ import {
   DetailLayout,
   DetailList,
   DetailSkeleton,
+  DetailTabs,
   RailSection,
+  useDetailTab,
 } from "@/components/governance/detail";
 import { PlainMarkdown } from "@/components/governance/markdown";
 import {
@@ -30,21 +32,23 @@ import {
   TallyLegend,
 } from "@/components/governance/tally";
 import { PollVoteForm } from "@/components/governance/vote-form";
+import { VotesPanel } from "@/components/governance/votes";
 import { CopyButton } from "@/components/identity";
-import {
-  Card,
-  EmptyState,
-  ErrorNotice,
-  Page,
-  SectionHeader,
-} from "@/components/page";
+import { Card, EmptyState, ErrorNotice, Page } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton, StatusDot } from "@/components/ui/misc";
 import { addressUrl } from "@/lib/config";
 import { formatLPT, formatPercent, shortAddress } from "@/lib/format";
-import { useGovernance, useProtocol } from "@/lib/hooks/queries";
+import {
+  useGovernance,
+  useOrchestrators,
+  usePollVotes,
+  useProtocol,
+} from "@/lib/hooks/queries";
+
+const TABS = ["proposal", "votes"] as const;
 
 const LINK =
   "inline-flex items-center gap-1 hover:text-foreground hover:underline underline-offset-4";
@@ -58,6 +62,9 @@ export default function PollPage() {
   const nowMs = useNow(30_000);
   const poll = governance.data?.polls.find((p) => p.id.toLowerCase() === id);
   const doc = usePollDocument(poll?.proposal);
+  const [tab, setTab] = useDetailTab(TABS, "proposal");
+  const votes = usePollVotes(poll ? poll.id : undefined);
+  const orchestrators = useOrchestrators();
 
   if (governance.error) {
     return (
@@ -206,10 +213,18 @@ export default function PollPage() {
         }
         main={
           <>
-            <SectionHeader
-              title="Proposal"
+            <DetailTabs
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "proposal", label: "Proposal" },
+                {
+                  value: "votes",
+                  label: `Votes · ${poll.voteCount.toLocaleString()}`,
+                },
+              ]}
               action={
-                lipUrl ? (
+                tab === "proposal" && lipUrl ? (
                   <a
                     href={lipUrl}
                     target="_blank"
@@ -221,34 +236,46 @@ export default function PollPage() {
                 ) : undefined
               }
             />
-            <Card className="p-5 sm:p-6">
-              {doc.isLoading ? (
-                <div className="flex flex-col gap-3">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-11/12" />
-                  <Skeleton className="h-4 w-4/5" />
-                  <Skeleton className="mt-4 h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              ) : doc.data ? (
-                <PlainMarkdown
-                  source={doc.data.body}
-                  base={lipUrl ?? undefined}
-                />
-              ) : (
-                <div className="flex flex-col items-start gap-3">
-                  <p className="text-ui-body font-medium">
-                    Couldn&apos;t load the proposal text from IPFS
-                  </p>
-                  <p className="font-mono text-ui-caption break-all text-muted-foreground">
-                    {poll.proposal}
-                  </p>
-                  <Button size="sm" onClick={() => doc.refetch()}>
-                    Retry
-                  </Button>
-                </div>
-              )}
-            </Card>
+            {tab === "votes" ? (
+              <VotesPanel
+                votes={votes.data}
+                isLoading={votes.isLoading}
+                error={votes.error}
+                onRetry={() => votes.refetch()}
+                series={series}
+                orchestrators={orchestrators.data}
+                ended={phase === "ended"}
+              />
+            ) : (
+              <Card className="p-5 sm:p-6">
+                {doc.isLoading ? (
+                  <div className="flex flex-col gap-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-11/12" />
+                    <Skeleton className="h-4 w-4/5" />
+                    <Skeleton className="mt-4 h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                ) : doc.data ? (
+                  <PlainMarkdown
+                    source={doc.data.body}
+                    base={lipUrl ?? undefined}
+                  />
+                ) : (
+                  <div className="flex flex-col items-start gap-3">
+                    <p className="text-ui-body font-medium">
+                      Couldn&apos;t load the proposal text from IPFS
+                    </p>
+                    <p className="font-mono text-ui-caption break-all text-muted-foreground">
+                      {poll.proposal}
+                    </p>
+                    <Button size="sm" onClick={() => doc.refetch()}>
+                      Retry
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )}
           </>
         }
       />

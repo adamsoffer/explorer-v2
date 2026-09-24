@@ -1,5 +1,9 @@
+"use client";
+
 import { ArrowLeft } from "lucide-react";
+import { motion } from "motion/react";
 import Link from "next/link";
+import { useCallback, useSyncExternalStore } from "react";
 
 import { Card, Page, SectionHeader } from "@/components/page";
 import { Skeleton } from "@/components/ui/misc";
@@ -150,5 +154,94 @@ export function DetailSkeleton() {
         }
       />
     </Page>
+  );
+}
+
+/* ── Tabs (?tab=votes) ───────────────────────────────────────────────────── */
+
+const TAB_EVENT = "detail-tab:changed";
+
+function subscribeTab(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  window.addEventListener(TAB_EVENT, onChange);
+  return () => {
+    window.removeEventListener("popstate", onChange);
+    window.removeEventListener(TAB_EVENT, onChange);
+  };
+}
+
+/**
+ * The detail page's tab, kept in `?tab=` so a votes view can be linked.
+ * Reads the URL directly so the page doesn't need a Suspense boundary.
+ */
+export function useDetailTab<T extends string>(
+  values: readonly T[],
+  fallback: T
+) {
+  const tab = useSyncExternalStore(
+    subscribeTab,
+    () => {
+      const v = new URLSearchParams(window.location.search).get("tab");
+      return values.includes(v as T) ? (v as T) : fallback;
+    },
+    () => fallback
+  );
+  const setTab = useCallback(
+    (next: T) => {
+      const url = new URL(window.location.href);
+      if (next === fallback) url.searchParams.delete("tab");
+      else url.searchParams.set("tab", next);
+      window.history.replaceState(window.history.state, "", url);
+      window.dispatchEvent(new Event(TAB_EVENT));
+    },
+    [fallback]
+  );
+  return [tab, setTab] as const;
+}
+
+export function DetailTabs<T extends string>({
+  value,
+  onChange,
+  options,
+  action,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly { value: T; label: React.ReactNode }[];
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-5 flex items-end justify-between gap-3 border-b border-hairline">
+      <div role="tablist" aria-label="Section" className="flex gap-5">
+        {options.map((o) => {
+          const active = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(o.value)}
+              className={cn(
+                "relative -mb-px cursor-pointer pb-2.5 text-[15px] font-medium transition-colors outline-none focus-visible:text-foreground",
+                active
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {o.label}
+              {active && (
+                <motion.span
+                  layoutId="detail-tab"
+                  className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-foreground"
+                  transition={{ type: "spring", bounce: 0.15, duration: 0.35 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {action && <div className="pb-2.5">{action}</div>}
+    </div>
   );
 }
