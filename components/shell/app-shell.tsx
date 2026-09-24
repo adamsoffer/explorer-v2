@@ -12,6 +12,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { ExplorerBadge } from "@/components/brand/explorer-badge";
 import { LivepeerLockup } from "@/components/brand/logo";
 import { THEME_OPTIONS, useTheme } from "@/components/theme";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -126,12 +127,10 @@ function SidebarBody({
           href="/"
           onClick={onNavigate}
           aria-label="Livepeer Explorer home"
-          className="flex items-center gap-2"
+          className="flex items-center gap-2.5 rounded-sm outline-none"
         >
           <LivepeerLockup className="h-[15px] w-auto text-foreground" />
-          <span className="rounded-full border border-hairline px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
-            Explorer
-          </span>
+          <ExplorerBadge />
         </Link>
       </div>
 
@@ -217,8 +216,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <MenuIcon className="size-5" />
           </button>
-          <Link href="/" aria-label="Home" className="flex items-center">
+          <Link
+            href="/"
+            aria-label="Livepeer Explorer home"
+            className="flex items-center gap-2 outline-none"
+          >
             <LivepeerLockup className="h-[14px] w-auto text-foreground" />
+            <ExplorerBadge />
           </Link>
           <div className="flex-1" />
           <button
