@@ -90,12 +90,12 @@ export function Onboarding() {
           <div className="flex flex-col gap-5">
             <span className="text-ui-caption text-green-bright">Portfolio</span>
             <h1 className="text-display-sm font-light tracking-[-0.02em] text-balance sm:text-display-md">
-              Every LPT you stake, in one place.
+              Know exactly what your stake is earning.
             </h1>
             <p className="max-w-[48ch] text-[15px] leading-6 text-muted-foreground">
-              See your stake, rewards and fees round by round across all your
-              wallets, know when an orchestrator slips, and act on it without
-              leaving the page.
+              Rewards and fees for every wallet you hold, rebuilt round by
+              round. Spot an orchestrator slipping before it costs you, and act
+              on it without leaving the page.
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button
