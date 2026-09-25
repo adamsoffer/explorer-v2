@@ -9,6 +9,7 @@ import {
   type Snapshot,
 } from "@/lib/portfolio/compute";
 
+import { isActiveInRound } from "./active";
 import { paginate, querySubgraph } from "./client";
 
 type RawUnbondingLock = {
@@ -31,7 +32,10 @@ export type RawDelegator = {
   lastClaimRound: { id: string } | null;
   delegate: {
     id: string;
+    /** Derived from the rounds below; see `isActiveInRound`. */
     active: boolean;
+    activationRound: string;
+    deactivationRound: string;
     status: string;
     rewardCut: string;
     feeShare: string;
@@ -64,7 +68,8 @@ const DELEGATORS = /* GraphQL */ `
       }
       delegate {
         id
-        active
+        activationRound
+        deactivationRound
         status
         rewardCut
         feeShare
@@ -215,6 +220,13 @@ export async function fetchPortfolio(
   ]);
 
   const currentRound = Number(protocol.currentRound.id);
+  for (const d of delegators)
+    if (d.delegate)
+      d.delegate.active = isActiveInRound(
+        d.delegate.activationRound,
+        d.delegate.deactivationRound,
+        currentRound
+      );
 
   const snapshots: Snapshot[] = rawSnapshots.map((s) => ({
     account: s.delegator.id,

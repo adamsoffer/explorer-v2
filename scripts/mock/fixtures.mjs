@@ -736,6 +736,8 @@ export function generate({
         roundTs.get(R0) - (R0 - o.activationRound) * ROUND_SECONDS
       ),
       activationRound: String(o.activationRound),
+      // Never deactivated: the contract's sentinel (2^255 - 1).
+      deactivationRound: o.active ? String(2n ** 255n - 1n) : String(CUR - 40),
       lastRewardRound: o.lastRewardRound ?? null,
       thirtyDayVolumeETH: dec(thirty, 10),
       ninetyDayVolumeETH: dec(thirty * range(2.6, 3.3), 10),

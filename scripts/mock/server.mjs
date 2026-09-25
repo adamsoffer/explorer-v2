@@ -67,7 +67,8 @@ function shapeDelegator(d) {
     delegate: t
       ? {
           id: t.id,
-          active: t.active,
+          activationRound: t.activationRound,
+          deactivationRound: t.deactivationRound,
           status: t.status,
           rewardCut: t.rewardCut,
           feeShare: t.feeShare,
@@ -124,7 +125,8 @@ function windowPools(id, windowStart) {
 function shapeTranscoder(t, windowStart, withLifetime) {
   const out = {
     id: t.id,
-    active: t.active,
+    activationRound: t.activationRound,
+    deactivationRound: t.deactivationRound,
     status: t.status,
     totalStake: t.totalStake,
     rewardCut: t.rewardCut,
@@ -665,9 +667,13 @@ const resolvers = {
       ),
   }),
 
-  Orchestrators: ({ windowStart = 0 }) => ({
+  Orchestrators: ({ windowStart = 0, round }) => ({
     transcoders: f.transcoders
-      .filter((t) => t.active)
+      .filter(
+        (t) =>
+          BigInt(t.activationRound) <= BigInt(round) &&
+          BigInt(round) < BigInt(t.deactivationRound)
+      )
       .sort((a, b) => Number(b.totalStake) - Number(a.totalStake))
       .slice(0, 200)
       .map((t) => shapeTranscoder(t, Number(windowStart), false)),

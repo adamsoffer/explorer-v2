@@ -1,5 +1,6 @@
 import { PoolHistory, PRECISE } from "@/lib/portfolio/compute";
 
+import { isActiveInRound } from "./active";
 import { paginate, querySubgraph } from "./client";
 import { toPoolPoint } from "./portfolio";
 
@@ -53,7 +54,8 @@ type RawWindowPool = {
 
 type RawTranscoder = {
   id: string;
-  active: boolean;
+  activationRound: string;
+  deactivationRound: string;
   status: string;
   totalStake: string;
   rewardCut: string;
@@ -373,7 +375,8 @@ export type Orchestrator = {
 
 const TRANSCODER_FIELDS = /* GraphQL */ `
   id
-  active
+  activationRound
+  deactivationRound
   status
   totalStake
   rewardCut
@@ -397,9 +400,9 @@ const TRANSCODER_FIELDS = /* GraphQL */ `
 `;
 
 const ORCHESTRATORS = /* GraphQL */ `
-  query Orchestrators($windowStart: Int!) {
+  query Orchestrators($windowStart: Int!, $round: BigInt!) {
     transcoders(
-      where: { active: true }
+      where: { activationRound_lte: $round, deactivationRound_gt: $round }
       first: 200
       orderBy: totalStake
       orderDirection: desc
@@ -468,7 +471,11 @@ function toOrchestrator(
 ): Orchestrator {
   return {
     id: t.id,
-    active: t.active,
+    active: isActiveInRound(
+      t.activationRound,
+      t.deactivationRound,
+      currentRound
+    ),
     status: t.status,
     totalStake: Number(t.totalStake),
     selfStake: Number(t.delegator?.bondedAmount ?? 0),
@@ -494,6 +501,7 @@ export async function fetchOrchestrators(
     ORCHESTRATORS,
     {
       windowStart: windowStart(protocol),
+      round: String(protocol.currentRound),
     }
   );
   return transcoders.map((t) =>
