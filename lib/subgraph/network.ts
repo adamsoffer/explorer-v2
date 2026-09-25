@@ -295,9 +295,38 @@ const DAYS = /* GraphQL */ `
   }
 `;
 
+/** Day fields that are snapshots set when a round starts, never truly zero. */
+const SNAPSHOT_FIELDS = [
+  "participationRate",
+  "inflation",
+  "totalActiveStake",
+  "delegatorsCount",
+  "activeTranscoderCount",
+] as const;
+
+/**
+ * The subgraph creates a day's entity at its first event with these
+ * snapshot fields at zero, and only fills them in when a round starts. Until
+ * then (typically today) a zero means "not recorded yet", so carry the
+ * previous day's value forward rather than charting a drop to zero. Fee
+ * volume is left alone: a day without fees really is zero.
+ */
+export function fillUnsetDayStats(days: Day[]): Day[] {
+  const out: Day[] = [];
+  for (const d of days) {
+    const prev = out[out.length - 1];
+    const next = { ...d };
+    if (prev) {
+      for (const k of SNAPSHOT_FIELDS) if (!(next[k] > 0)) next[k] = prev[k];
+    }
+    out.push(next);
+  }
+  return out;
+}
+
 export async function fetchDays(first = 365): Promise<Day[]> {
   const { days } = await querySubgraph<{ days: RawDay[] }>(DAYS, { first });
-  return days
+  const parsed = days
     .map((d) => ({
       date: Number(d.date),
       volumeETH: Number(d.volumeETH),
@@ -309,6 +338,7 @@ export async function fetchDays(first = 365): Promise<Day[]> {
       activeTranscoderCount: Number(d.activeTranscoderCount),
     }))
     .sort((a, b) => a.date - b.date);
+  return fillUnsetDayStats(parsed);
 }
 
 /* ── Orchestrators ───────────────────────────────────────────────────────── */
