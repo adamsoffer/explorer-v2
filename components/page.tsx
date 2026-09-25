@@ -175,7 +175,7 @@ export function EmptyState({
       <div className="flex flex-col gap-1">
         <p className="text-ui-body font-medium text-foreground">{title}</p>
         {description && (
-          <p className="max-w-[46ch] text-ui-caption text-muted-foreground">
+          <p className="max-w-[62ch] text-ui-caption text-balance text-muted-foreground">
             {description}
           </p>
         )}
