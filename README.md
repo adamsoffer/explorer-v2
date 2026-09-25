@@ -48,8 +48,8 @@ compounded to a year, not a projection from protocol parameters.
 ## Stack
 
 - Next.js 16 (App Router), React 19, TypeScript
-- Tailwind CSS v4 with the Livepeer UI registry tokens (`app/globals.css`) —
-  the same design system as the Livepeer Console (`livepeer.peaceno.de`)
+- Tailwind CSS v4 with the Livepeer Design System tokens (`app/globals.css`),
+  from the Livepeer UI registry (`livepeer.peaceno.de`)
 - Base UI primitives in `components/ui`, Lucide icons, Motion
 - TanStack Query over plain GraphQL `fetch` (`lib/subgraph`)
 - wagmi + viem + RainbowKit for wallets and transactions
@@ -89,7 +89,8 @@ screenshot script for working on the UI offline.
 
 ## Design conventions
 
-These follow the Livepeer Console so the products feel like one family:
+These follow the Livepeer Design System so Livepeer products feel like one
+family:
 
 - **Ink and paper.** Neutral surfaces; Livepeer green is an accent for status,
   liveness, positive deltas and focus — never a button fill.

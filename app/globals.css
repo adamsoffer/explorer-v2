@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 
 /*
- * Livepeer UI registry theme (livepeer.peaceno.de) — the same token set the
- * Livepeer Console vendors. Registry values are kept verbatim so components
+ * Livepeer Design System theme, from the Livepeer UI registry
+ * (livepeer.peaceno.de). Registry values are kept verbatim so components
  * pulled from `@livepeer-ui` drop in without restyling; explorer-specific
  * vocabulary lives in the token layer further down and only ever aliases or
  * tints these.
@@ -153,7 +153,7 @@ html[data-theme="light"] {
   --color-warm-subtle: rgba(245, 158, 11, 0.12);
 
   /* Chart series — seven fixed slots, never cycled. Validated against the
-     card surfaces in both themes (Livepeer Console palette). */
+     card surfaces in both themes (Livepeer Design System palette). */
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
