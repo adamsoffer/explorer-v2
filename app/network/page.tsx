@@ -26,7 +26,6 @@ import {
   formatLPT,
   formatNumber,
   formatPercent,
-  formatRelativeTime,
   formatUSD,
 } from "@/lib/format";
 import { useLiveFeed } from "@/lib/hooks/live-feed";
@@ -320,91 +319,6 @@ function HistorySection() {
   );
 }
 
-/* ── Recent rounds ───────────────────────────────────────────────────────── */
-
-function RecentRounds({ protocol }: { protocol?: Protocol }) {
-  const now = useNow(60_000);
-  const rows = protocol
-    ? [...protocol.recentRounds].sort((a, b) => b.round - a.round).slice(0, 10)
-    : [];
-
-  return (
-    <Section>
-      <SectionHeader
-        title="Recent rounds"
-        description="The last ten rounds, newest first"
-      />
-      <Card className="overflow-x-auto">
-        <table className="w-full min-w-[520px] text-left">
-          <thead>
-            <tr className="border-b border-hairline text-ui-caption text-muted-foreground">
-              <th className="px-4 py-2.5 font-normal">Round</th>
-              <th className="px-4 py-2.5 font-normal">Started</th>
-              <th className="px-4 py-2.5 text-right font-normal">Mintable</th>
-              <th className="px-4 py-2.5 text-right font-normal">Fee volume</th>
-            </tr>
-          </thead>
-          <tbody>
-            {!protocol
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <tr
-                    key={i}
-                    className="border-b border-hairline last:border-0"
-                  >
-                    {Array.from({ length: 4 }).map((__, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <Skeleton
-                          className={
-                            j >= 2 ? "ml-auto h-3.5 w-20" : "h-3.5 w-16"
-                          }
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              : rows.map((r) => (
-                  <tr
-                    key={r.round}
-                    className="border-b border-hairline last:border-0"
-                  >
-                    <td className="px-4 py-3 font-mono text-[13px] tabular-nums">
-                      {r.round.toLocaleString()}
-                    </td>
-                    <td
-                      className="px-4 py-3 text-ui-body text-muted-foreground"
-                      title={new Date(r.ts * 1000).toLocaleString()}
-                    >
-                      {r.ts > 0 ? formatRelativeTime(r.ts, now) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums">
-                      <span
-                        className={
-                          r.mintableTokens > 0
-                            ? undefined
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {formatLPT(r.mintableTokens)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums">
-                      <span
-                        className={
-                          r.volumeETH > 0 ? undefined : "text-muted-foreground"
-                        }
-                      >
-                        {formatETH(r.volumeETH)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-          </tbody>
-        </table>
-      </Card>
-    </Section>
-  );
-}
-
 /* ── Reward calls this round ─────────────────────────────────────────────── */
 
 /**
@@ -539,8 +453,6 @@ export default function NetworkPage() {
       <LatestActivity />
 
       <HistorySection />
-
-      {!(error && !protocol) && <RecentRounds protocol={protocol} />}
     </Page>
   );
 }
