@@ -93,9 +93,9 @@ export function Onboarding() {
               Know exactly what your stake is earning.
             </h1>
             <p className="max-w-[48ch] text-[15px] leading-6 text-muted-foreground">
-              Rewards and fees for every wallet you hold, rebuilt round by
-              round. Spot an orchestrator slipping before it costs you, and act
-              on it without leaving the page.
+              Every round&apos;s rewards and fees, across every wallet you hold.
+              Spot an orchestrator slipping before it costs you, and act on it
+              without leaving the page.
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button
