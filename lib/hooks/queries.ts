@@ -3,9 +3,15 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import {
+  fetchGateway,
+  fetchGatewayPayouts,
+  fetchGateways,
+} from "@/lib/subgraph/gateways";
+import {
   fetchAccountEvents,
   fetchDays,
   fetchEvents,
+  fetchGatewayEvents,
   fetchGovernance,
   fetchOrchestrator,
   fetchOrchestrators,
@@ -60,6 +66,45 @@ export function useOrchestrator(id: string) {
     queryFn: () => fetchOrchestrator(id, protocol!),
     enabled: Boolean(protocol),
     staleTime: 5 * MINUTE,
+  });
+}
+
+export function useGateways({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["gateways"],
+    queryFn: () => fetchGateways(),
+    enabled,
+    staleTime: 10 * MINUTE,
+  });
+}
+
+/** One gateway; resolves to null for an address that has never funded one. */
+export function useGateway(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ["gateway", id?.toLowerCase()],
+    queryFn: () => fetchGateway(id!),
+    enabled: Boolean(id),
+    staleTime: 5 * MINUTE,
+  });
+}
+
+/** Who a gateway paid over the last 90 days. */
+export function useGatewayPayouts(id: string | undefined) {
+  return useQuery({
+    queryKey: ["gateway-payouts", id?.toLowerCase()],
+    queryFn: () =>
+      fetchGatewayPayouts(id!, Math.floor(Date.now() / 1000) - 90 * 86400),
+    enabled: Boolean(id),
+    staleTime: 10 * MINUTE,
+  });
+}
+
+export function useGatewayEvents(id: string | undefined, first = 50) {
+  return useQuery({
+    queryKey: ["gateway-events", id?.toLowerCase(), first],
+    queryFn: () => fetchGatewayEvents(id!, first),
+    enabled: Boolean(id),
+    staleTime: MINUTE,
   });
 }
 

@@ -56,12 +56,16 @@ const WATCHLIST = [
 ];
 
 // Orchestrator B (where the demo wallet is bonded) comes from the mock itself.
-async function orchestratorB() {
+async function demoIds() {
   try {
     const res = await fetch(`${MOCK}/health`);
-    return (await res.json()).demo.B;
+    return (await res.json()).demo;
   } catch {
-    return "0xb29178bd5e0da702ab69129048af7b9fcf222026";
+    return {
+      B: "0xb29178bd5e0da702ab69129048af7b9fcf222026",
+      gateway: "0x3f1c7a9e5b2d4c6e8a0b1d3f5e7c9a2b4d6f8e01",
+      selfGateway: "0x8424e9f716c4a85cb2ff93b46941e1cc5c9fcdc7",
+    };
   }
 }
 
@@ -72,7 +76,7 @@ const COINGECKO = {
 
 async function main() {
   const { chromium } = loadPlaywright();
-  const B = await orchestratorB();
+  const { B, gateway, selfGateway } = await demoIds();
 
   const pages = [
     { name: "portfolio", path: "/", watchlist: true },
@@ -80,6 +84,13 @@ async function main() {
     { name: "account", path: `/accounts/${WATCHED}`, watchlist: true },
     { name: "orchestrators", path: "/orchestrators", watchlist: true },
     { name: "orchestrator", path: `/orchestrators/${B}`, watchlist: true },
+    { name: "gateways", path: "/gateways", watchlist: true },
+    { name: "gateway", path: `/gateways/${gateway}`, watchlist: true },
+    {
+      name: "gateway-self",
+      path: `/gateways/${selfGateway}`,
+      watchlist: true,
+    },
     { name: "network", path: "/network", watchlist: true },
     { name: "governance", path: "/governance", watchlist: true },
     { name: "activity", path: "/activity", watchlist: true },
@@ -100,7 +111,7 @@ async function main() {
       viewport: { width: 390, height: 844 },
       theme: "dark",
       mobile: true,
-      pages: ["portfolio", "orchestrators"],
+      pages: ["portfolio", "orchestrators", "gateways", "gateway", "activity"],
     },
   ];
 

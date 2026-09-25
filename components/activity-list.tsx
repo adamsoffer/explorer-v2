@@ -8,7 +8,9 @@ import {
   LogIn,
   LogOut,
   Percent,
+  PiggyBank,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
   Ticket,
   Timer,
@@ -210,6 +212,45 @@ function describe(e: ActivityEvent): {
           <>
             <Name address={e.delegate} /> earned {formatETH(e.amount ?? 0)} from
             a winning ticket
+            {e.gateway ? (
+              <>
+                {" "}
+                paid by <Name address={e.gateway} />
+              </>
+            ) : null}
+          </>
+        ),
+      };
+    case "DepositFunded":
+      return {
+        icon: PiggyBank,
+        actor: e.gateway,
+        text: (
+          <>
+            Gateway <Name address={e.gateway} /> added{" "}
+            {formatETH(e.amount ?? 0)} to its deposit
+          </>
+        ),
+      };
+    case "ReserveFunded":
+      return {
+        icon: ShieldCheck,
+        actor: e.gateway,
+        text: (
+          <>
+            Gateway <Name address={e.gateway} /> added{" "}
+            {formatETH(e.amount ?? 0)} to its reserve
+          </>
+        ),
+      };
+    case "Withdrawal":
+      return {
+        icon: Wallet,
+        actor: e.gateway,
+        text: (
+          <>
+            Gateway <Name address={e.gateway} /> withdrew{" "}
+            {formatETH(e.amount ?? 0)} from its deposit and reserve
           </>
         ),
       };

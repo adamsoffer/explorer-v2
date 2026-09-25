@@ -42,6 +42,8 @@ function Button({ className, variant, size, ...props }: ButtonProps) {
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size }), className)}
+      // A button rendered as a link (`render={<Link />}`) isn't a <button>.
+      nativeButton={props.render ? false : undefined}
       {...props}
     />
   );

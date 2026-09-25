@@ -16,7 +16,8 @@ type Filter =
   | "staking"
   | "rewards"
   | "governance"
-  | "orchestrators";
+  | "orchestrators"
+  | "gateways";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -25,6 +26,7 @@ const FILTERS = [
   { value: "rewards", label: "Rewards" },
   { value: "governance", label: "Governance" },
   { value: "orchestrators", label: "Orchestrators" },
+  { value: "gateways", label: "Gateways" },
 ] as const;
 
 const TYPES: Record<Exclude<Filter, "all">, readonly string[]> = {
@@ -37,6 +39,7 @@ const TYPES: Record<Exclude<Filter, "all">, readonly string[]> = {
     "TranscoderActivated",
     "TranscoderDeactivated",
   ],
+  gateways: ["DepositFunded", "ReserveFunded", "Withdrawal"],
 };
 
 const EMPTY: Record<Filter, string> = {
@@ -46,6 +49,7 @@ const EMPTY: Record<Filter, string> = {
   rewards: "No recent reward calls.",
   governance: "No recent votes.",
   orchestrators: "No recent orchestrator changes.",
+  gateways: "No recent gateway deposits or withdrawals.",
 };
 
 export default function ActivityPage() {
@@ -65,7 +69,7 @@ export default function ActivityPage() {
     <Page>
       <PageHeader
         title="Activity"
-        description="Every protocol event on Arbitrum as it's indexed: fees earned, delegations, reward calls and votes."
+        description="Every protocol event on Arbitrum as it's indexed: fees earned, delegations, reward calls, votes and gateway deposits."
         actions={
           <LiveStatus updatedAt={dataUpdatedAt} failing={Boolean(error)} />
         }

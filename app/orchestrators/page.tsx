@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  ArrowDown,
-  ArrowRightLeft,
-  ArrowUp,
-  Info,
-  Search,
-  X,
-} from "lucide-react";
+import { ArrowRightLeft, Info, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -23,6 +16,7 @@ import {
 import { useStaking } from "@/components/staking/staking";
 import { Button } from "@/components/ui/button";
 import { Input, Segmented, Skeleton } from "@/components/ui/misc";
+import { SortHeader } from "@/components/ui/sort-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { formatETH, formatLPT, formatNumber, shortAddress } from "@/lib/format";
@@ -112,53 +106,6 @@ function CallsMeter({ calls, window }: { calls: number; window: number }) {
         </span>
       </span>
     </Tooltip>
-  );
-}
-
-function SortHeader({
-  label,
-  k,
-  sort,
-  dir,
-  onSort,
-  className,
-  hint,
-}: {
-  label: string;
-  k: SortKey;
-  sort: SortKey;
-  dir: "asc" | "desc";
-  onSort: (k: SortKey) => void;
-  className?: string;
-  hint?: string;
-}) {
-  const active = sort === k;
-  const Icon = dir === "desc" ? ArrowDown : ArrowUp;
-  const button = (
-    <button
-      type="button"
-      onClick={() => onSort(k)}
-      className={cn(
-        "inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-foreground",
-        active ? "text-foreground" : "text-muted-foreground"
-      )}
-    >
-      {label}
-      <Icon className={cn("size-3", active ? "opacity-100" : "opacity-0")} />
-    </button>
-  );
-  return (
-    <th
-      aria-sort={
-        active ? (dir === "desc" ? "descending" : "ascending") : undefined
-      }
-      className={cn(
-        "px-3 py-2.5 text-right font-normal whitespace-nowrap",
-        className
-      )}
-    >
-      {hint ? <Tooltip content={hint}>{button}</Tooltip> : button}
-    </th>
   );
 }
 

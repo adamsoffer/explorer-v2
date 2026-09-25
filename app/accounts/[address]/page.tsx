@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Eye, Server } from "lucide-react";
+import { Check, Eye, Server, Waypoints } from "lucide-react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { useMemo } from "react";
@@ -12,7 +12,7 @@ import { PortfolioView } from "@/components/portfolio/portfolio-view";
 import { Button } from "@/components/ui/button";
 import { addressUrl } from "@/lib/config";
 import { shortAddress } from "@/lib/format";
-import { useOrchestrators } from "@/lib/hooks/queries";
+import { useGateway, useOrchestrators } from "@/lib/hooks/queries";
 import { usePortfolioAccounts, useWatchlist } from "@/lib/hooks/watchlist";
 
 export default function AccountPage() {
@@ -24,6 +24,7 @@ export default function AccountPage() {
   const { walletAddress, isOwned } = usePortfolioAccounts();
   const { list, add, remove } = useWatchlist();
   const { data: orchestrators } = useOrchestrators();
+  const { data: gateway } = useGateway(valid ? address : null);
 
   const accounts = useMemo(
     () => [
@@ -83,6 +84,11 @@ export default function AccountPage() {
               render={<Link href={`/orchestrators/${address}`} />}
             >
               <Server /> Orchestrator profile
+            </Button>
+          )}
+          {gateway && (
+            <Button size="sm" render={<Link href={`/gateways/${address}`} />}>
+              <Waypoints /> Gateway profile
             </Button>
           )}
           {!isYours &&

@@ -100,9 +100,13 @@ type RawEvent = {
   rewardTokens?: string;
   rewardCut?: string;
   feeShare?: string;
-  // Ticket redemptions
+  // Ticket redemptions and gateway funding
   recipient?: Ref;
   faceValue?: string;
+  sender?: Ref;
+  reserveHolder?: Ref;
+  deposit?: string;
+  reserve?: string;
   // Votes: aliased, since `voter` and `proposal` differ in type by event
   pollVoter?: string;
   choiceID?: string;
@@ -655,6 +659,8 @@ export type ActivityEvent = {
   delegator?: string;
   delegate?: string;
   oldDelegate?: string;
+  /** The gateway that paid a ticket, or funded or withdrew its deposit. */
+  gateway?: string;
   amount?: number;
   rewardCut?: number;
   feeShare?: number;
@@ -754,7 +760,29 @@ const EVENT_FIELDS = /* GraphQL */ `
     recipient {
       id
     }
+    sender {
+      id
+    }
     faceValue
+  }
+  ... on DepositFundedEvent {
+    sender {
+      id
+    }
+    amount
+  }
+  ... on ReserveFundedEvent {
+    reserveHolder {
+      id
+    }
+    amount
+  }
+  ... on WithdrawalEvent {
+    sender {
+      id
+    }
+    deposit
+    reserve
   }
   ... on VoteEvent {
     pollVoter: voter
@@ -787,7 +815,9 @@ function toEvent(e: RawEvent): ActivityEvent {
     e.rewardTokens ??
     e.faceValue ??
     e.weight ??
-    undefined;
+    (e.deposit != null
+      ? String(Number(e.deposit) + Number(e.reserve ?? 0))
+      : undefined);
   return {
     id: e.id,
     type: e.__typename.replace(/Event$/, ""),
@@ -806,6 +836,7 @@ function toEvent(e: RawEvent): ActivityEvent {
       e.newDelegator?.id ??
       e.recipient?.id,
     oldDelegate: e.oldDelegate?.id,
+    gateway: e.sender?.id ?? e.reserveHolder?.id,
     amount: amount != null ? Number(amount) : undefined,
     rewardCut: e.rewardCut != null ? Number(e.rewardCut) / 1e4 : undefined,
     feeShare: e.feeShare != null ? Number(e.feeShare) / 1e4 : undefined,
@@ -832,6 +863,9 @@ const EVENT_TYPES = [
   "TranscoderActivatedEvent",
   "TranscoderDeactivatedEvent",
   "WinningTicketRedeemedEvent",
+  "DepositFundedEvent",
+  "ReserveFundedEvent",
+  "WithdrawalEvent",
   "NewRoundEvent",
   "VoteEvent",
   "TreasuryVoteEvent",
@@ -874,6 +908,30 @@ export async function fetchAccountEvents(
 ): Promise<ActivityEvent[]> {
   const data = await querySubgraph<Record<string, RawEvent[]>>(ACCOUNT_EVENTS, {
     ids: ids.map((i) => i.toLowerCase()),
+    first,
+  });
+  return Object.values(data)
+    .flat()
+    .map(toEvent)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, first);
+}
+
+const GATEWAY_EVENTS = /* GraphQL */ `
+  query GatewayEvents($id: String!, $first: Int!) {
+    deposits: depositFundedEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { sender: $id }) { ${EVENT_FIELDS} }
+    reserves: reserveFundedEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { reserveHolder: $id }) { ${EVENT_FIELDS} }
+    withdrawals: withdrawalEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { sender: $id }) { ${EVENT_FIELDS} }
+  }
+`;
+
+/** A gateway's deposit and reserve top-ups and withdrawals. */
+export async function fetchGatewayEvents(
+  id: string,
+  first = 50
+): Promise<ActivityEvent[]> {
+  const data = await querySubgraph<Record<string, RawEvent[]>>(GATEWAY_EVENTS, {
+    id: id.toLowerCase(),
     first,
   });
   return Object.values(data)

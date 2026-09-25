@@ -8,6 +8,7 @@ import {
   Search,
   Server,
   User,
+  Waypoints,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -19,8 +20,8 @@ import { Avatar, useIdentity } from "@/components/identity";
 import { THEME_OPTIONS, useTheme } from "@/components/theme";
 import { cn } from "@/lib/cn";
 import { L1_CHAIN } from "@/lib/config";
-import { formatLPT, shortAddress } from "@/lib/format";
-import { useOrchestrators } from "@/lib/hooks/queries";
+import { formatETH, formatLPT, shortAddress } from "@/lib/format";
+import { useGateways, useOrchestrators } from "@/lib/hooks/queries";
 import { useWatchlist } from "@/lib/hooks/watchlist";
 
 import { NAV } from "./nav";
@@ -34,7 +35,7 @@ type Item = {
   run: () => void;
 };
 
-function OrchestratorLabel({ address }: { address: string }) {
+function AddressLabel({ address }: { address: string }) {
   const { name } = useIdentity(address);
   return (
     <span className="flex min-w-0 items-baseline gap-2">
@@ -64,6 +65,8 @@ export function CommandSearch({
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const { data: orchestrators } = useOrchestrators();
+  // Only fetched once search opens: most visits never need it.
+  const { data: gateways } = useGateways({ enabled: open });
   const { add, list } = useWatchlist();
   const { preference, setPreference } = useTheme();
 
@@ -95,6 +98,7 @@ export function CommandSearch({
 
     if (target) {
       const isOrchestrator = orchestrators?.some((o) => o.id === target);
+      const isGateway = gateways?.some((g) => g.id === target);
       out.push({
         id: `acct-${target}`,
         group: "Address",
@@ -107,9 +111,22 @@ export function CommandSearch({
         icon: <Avatar address={target} size={18} />,
         run: () =>
           router.push(
-            isOrchestrator ? `/orchestrators/${target}` : `/accounts/${target}`
+            isOrchestrator
+              ? `/orchestrators/${target}`
+              : isGateway
+              ? `/gateways/${target}`
+              : `/accounts/${target}`
           ),
       });
+      if (isOrchestrator && isGateway) {
+        out.push({
+          id: `gateway-${target}`,
+          group: "Address",
+          label: "Open its gateway profile",
+          icon: <Waypoints className="size-4" strokeWidth={1.75} />,
+          run: () => router.push(`/gateways/${target}`),
+        });
+      }
       if (!list.some((w) => w.address === target)) {
         out.push({
           id: `watch-${target}`,
@@ -166,7 +183,7 @@ export function CommandSearch({
         out.push({
           id: `orch-${o.id}`,
           group: q ? "Orchestrators" : "Top orchestrators",
-          label: <OrchestratorLabel address={o.id} />,
+          label: <AddressLabel address={o.id} />,
           hint: (
             <span className="font-mono tabular-nums">
               {formatLPT(o.totalStake, { compact: true })}
@@ -177,12 +194,34 @@ export function CommandSearch({
         });
       }
     }
+
+    // Gateways only once there's a query, so the default list stays short.
+    if (gateways && q && !target) {
+      const matches = gateways.filter((g) => g.id.includes(q)).slice(0, 5);
+      for (const g of matches) {
+        out.push({
+          id: `gw-${g.id}`,
+          group: "Gateways",
+          label: <AddressLabel address={g.id} />,
+          hint: (
+            <span className="font-mono tabular-nums">
+              {g.ninetyDayVolumeETH > 0
+                ? `${formatETH(g.ninetyDayVolumeETH)} · 90d`
+                : "No recent fees"}
+            </span>
+          ),
+          icon: <Avatar address={g.id} size={18} />,
+          run: () => router.push(`/gateways/${g.id}`),
+        });
+      }
+    }
     return out;
   }, [
     trimmed,
     target,
     ensName,
     orchestrators,
+    gateways,
     list,
     router,
     add,
@@ -235,7 +274,7 @@ export function CommandSearch({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Search orchestrators, paste an address or ENS name"
+              placeholder="Search orchestrators and gateways, or paste an address or ENS name"
               aria-label="Search"
               role="combobox"
               aria-expanded="true"
@@ -314,7 +353,8 @@ export function CommandSearch({
               <User className="size-3" /> addresses open their account
             </span>
             <span className="hidden items-center gap-1 sm:flex">
-              <Server className="size-3" /> orchestrators open their profile
+              <Server className="size-3" /> orchestrators and gateways open
+              their profile
             </span>
           </div>
         </DialogPrimitive.Popup>

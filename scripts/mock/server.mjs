@@ -195,7 +195,23 @@ function shapeEvent(e) {
     case "TranscoderDeactivatedEvent":
       return { ...base, delegate: ref(e.delegate) };
     case "WinningTicketRedeemedEvent":
-      return { ...base, recipient: ref(e.delegate), faceValue: e.amount };
+      return {
+        ...base,
+        recipient: ref(e.delegate),
+        sender: ref(e.gateway),
+        faceValue: e.amount,
+      };
+    case "DepositFundedEvent":
+      return { ...base, sender: ref(e.gateway), amount: e.amount };
+    case "ReserveFundedEvent":
+      return { ...base, reserveHolder: ref(e.gateway), amount: e.amount };
+    case "WithdrawalEvent":
+      return {
+        ...base,
+        sender: ref(e.gateway),
+        deposit: e.deposit,
+        reserve: e.reserve,
+      };
     case "VoteEvent":
       return {
         ...base,
@@ -288,6 +304,154 @@ function mockVoters(key, count, buckets) {
   }));
 }
 
+/* ── Gateways: deposits, daily fees and the tickets behind them ─────────── */
+
+const DAY = 86400;
+const GATEWAY_DEMO = "0x3f1c7a9e5b2d4c6e8a0b1d3f5e7c9a2b4d6f8e01";
+
+const gateways = (() => {
+  const rnd = seeded(`gateways-${SEED}`);
+  const today = Math.floor(f.now / DAY) * DAY;
+  const active = f.transcoders
+    .filter((t) => t.active)
+    .sort((a, b) => Number(b.totalStake) - Number(a.totalStake));
+  // One orchestrator also runs a gateway and redeems some of its own tickets.
+  const selfOrch = active[6];
+  const out = [];
+  for (let i = 0; i < 26; i++) {
+    const id =
+      i === 0 ? GATEWAY_DEMO : i === 1 ? selfOrch.id : "0x" + hex(rnd, 40);
+    // Heavy-tailed daily pace: a few gateways carry most of the demand.
+    // Scaled so all gateways together roughly match the network's daily fees.
+    const pace =
+      0.6 * (i === 0 ? 0.9 : i === 1 ? 0.35 : 1.6 * rnd() ** 3.2 + 0.004);
+    const startDay = i === 0 ? 340 : Math.floor(30 + rnd() * 330);
+    // Some stopped paying: still listed while they started within a year.
+    const stoppedDay =
+      i > 1 && rnd() < 0.18 ? Math.floor(95 + rnd() * (startDay - 95)) : 0;
+    const peers = [...active]
+      .sort(() => rnd() - 0.5)
+      .slice(0, 3 + Math.floor(rnd() * 10));
+    if (i === 1) peers.unshift(selfOrch, selfOrch);
+    out.push({
+      id,
+      pace,
+      startDay,
+      stoppedDay: startDay > 95 ? stoppedDay : 0,
+      peers,
+      runway: i === 0 ? 11 : 4 + rnd() * 180,
+      reserve: i === 0 ? 1.5 : rnd() < 0.3 ? 0 : 0.2 + rnd() * 4,
+      days: [],
+      tickets: [],
+      funding: [],
+    });
+  }
+  for (const g of out) {
+    for (let ago = g.startDay; ago >= 0; ago--) {
+      if (g.stoppedDay && ago < g.stoppedDay) break;
+      const date = today - ago * DAY;
+      if (rnd() < 0.08) continue;
+      const growth = 0.6 + 0.8 * (1 - ago / 365);
+      let vol = g.pace * growth * (0.55 + rnd() * 0.9);
+      if (ago < 90) {
+        // Recent days are built from tickets so payouts add up to the days.
+        vol = 0;
+        const n = 1 + Math.floor(rnd() * 5);
+        for (let k = 0; k < n; k++) {
+          const fee = (g.pace * growth * (0.55 + rnd() * 0.9)) / n;
+          const ts = Math.min(f.now - 60, date + Math.floor(rnd() * DAY));
+          const to = g.peers[Math.floor(rnd() ** 1.6 * g.peers.length)];
+          g.tickets.push({
+            id: `0x${hex(rnd, 64)}-${k}`,
+            __typename: "WinningTicketRedeemedEvent",
+            round: roundAt(ts),
+            timestamp: ts,
+            tx: "0x" + hex(rnd, 64),
+            from: to.id,
+            delegate: to.id,
+            gateway: g.id,
+            amount: fee.toFixed(8),
+          });
+          vol += fee;
+        }
+      }
+      g.days.push({ date, volumeETH: vol });
+    }
+    const sum = (n) =>
+      g.days
+        .filter((d) => d.date > today - n * DAY)
+        .reduce((s, d) => s + d.volumeETH, 0);
+    g.thirty = sum(30);
+    g.ninety = sum(90);
+    g.total = g.days.reduce((s, d) => s + d.volumeETH, 0);
+    g.deposit = g.stoppedDay ? 0 : (g.thirty / 30 || g.pace) * g.runway;
+    if (g.stoppedDay) g.reserve = 0;
+    // Top-ups roughly monthly, a reserve at the start, a withdrawal on exit.
+    const fund = (__typename, ago, extra) => {
+      const ts = Math.min(f.now - 120, today - ago * DAY + 3600 * 9);
+      g.funding.push({
+        id: `0x${hex(rnd, 64)}-f`,
+        __typename,
+        round: roundAt(ts),
+        timestamp: ts,
+        tx: "0x" + hex(rnd, 64),
+        from: g.id,
+        gateway: g.id,
+        ...extra,
+      });
+    };
+    fund("ReserveFundedEvent", g.startDay, {
+      amount: (g.reserve || 1).toFixed(4),
+    });
+    for (
+      let ago = g.startDay;
+      ago > (g.stoppedDay || 0);
+      ago -= 26 + Math.floor(rnd() * 12)
+    )
+      fund("DepositFundedEvent", ago, { amount: (g.pace * 30).toFixed(4) });
+    if (g.stoppedDay)
+      fund("WithdrawalEvent", g.stoppedDay - 2, {
+        deposit: (g.pace * 4).toFixed(4),
+        reserve: "1",
+      });
+  }
+  return out;
+})();
+
+function roundAt(ts) {
+  let r = f.protocol.currentRound;
+  while (
+    r > 0 &&
+    f.roundByNum.get(r) &&
+    f.roundByNum.get(r).startTimestamp > ts
+  )
+    r--;
+  return r;
+}
+
+const gatewayById = new Map(gateways.map((g) => [g.id, g]));
+const gatewayTickets = gateways.flatMap((g) => g.tickets);
+console.log(
+  `[mock] gateways=${gateways.length} tickets=${gatewayTickets.length} demo gateway=${GATEWAY_DEMO} self-redeeming=${gateways[1].id}`
+);
+
+function shapeGateway(g, days) {
+  return {
+    id: g.id,
+    deposit: g.deposit.toFixed(6),
+    reserve: g.reserve.toFixed(6),
+    thirtyDayVolumeETH: g.thirty.toFixed(8),
+    ninetyDayVolumeETH: g.ninety.toFixed(8),
+    totalVolumeETH: g.total.toFixed(8),
+    firstActiveDay: g.days[0]?.date ?? 0,
+    lastActiveDay: g.days[g.days.length - 1]?.date ?? 0,
+    broadcasterDays: [...g.days]
+      .reverse()
+      .slice(0, days)
+      .map((d) => ({ date: d.date, volumeETH: d.volumeETH.toFixed(8) })),
+  };
+}
+
 /* ── Live events: a trickle of new transactions while the mock runs ──────── */
 
 const live = [];
@@ -309,13 +473,26 @@ function liveEvent(ts) {
     tx,
   };
   if (r < 0.62) {
-    const o = livePick(active);
+    const payers = gateways.filter((g) => !g.stoppedDay);
+    const g = payers[Math.floor(liveRnd() ** 2 * payers.length)];
+    const o = livePick(g.peers);
     return {
       ...base,
       __typename: "WinningTicketRedeemedEvent",
       from: o.id,
       delegate: o.id,
+      gateway: g.id,
       amount: (0.004 + liveRnd() * 0.05).toFixed(6),
+    };
+  }
+  if (r < 0.65) {
+    const g = livePick(gateways.filter((x) => !x.stoppedDay));
+    return {
+      ...base,
+      __typename: "DepositFundedEvent",
+      from: g.id,
+      gateway: g.id,
+      amount: (g.pace * 30).toFixed(4),
     };
   }
   if (r < 0.8) {
@@ -514,6 +691,51 @@ const resolvers = {
     };
   },
 
+  Gateways: ({ minActiveDay = 0 }) => ({
+    broadcasters: gateways
+      .filter((g) => g.ninety > 0 || (g.days[0]?.date ?? 0) >= minActiveDay)
+      .sort((a, b) => b.ninety - a.ninety)
+      .map((g) => shapeGateway(g, 90)),
+  }),
+
+  Gateway: ({ id }) => {
+    const g = gatewayById.get(String(id).toLowerCase());
+    return { broadcaster: g ? shapeGateway(g, 365) : null };
+  },
+
+  GatewayTickets: ({ sender, since = 0, first = 1000, lastId = "" }) => ({
+    winningTicketRedeemedEvents: page(
+      (gatewayById.get(String(sender).toLowerCase())?.tickets ?? []).filter(
+        (t) => t.timestamp >= since
+      ),
+      { first, lastId }
+    ).map((t) => ({
+      id: t.id,
+      timestamp: t.timestamp,
+      faceValue: t.amount,
+      recipient: ref(t.delegate),
+    })),
+  }),
+
+  GatewayEvents: ({ id, first = 50 }) => {
+    const g = gatewayById.get(String(id).toLowerCase());
+    const mine = [
+      ...(g?.tickets ?? []),
+      ...(g?.funding ?? []),
+      ...live.filter((e) => e.gateway === g?.id),
+    ].sort((a, b) => b.timestamp - a.timestamp);
+    const of = (t) =>
+      mine
+        .filter((e) => e.__typename === t)
+        .slice(0, first)
+        .map(shapeEvent);
+    return {
+      deposits: of("DepositFundedEvent"),
+      reserves: of("ReserveFundedEvent"),
+      withdrawals: of("WithdrawalEvent"),
+    };
+  },
+
   Events: ({ first = 100 }) => ({
     transactions: [
       ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),
@@ -687,7 +909,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname.startsWith("/coingecko"))
     return send(res, 200, COINGECKO);
   if (req.method === "GET" && url.pathname === "/health")
-    return send(res, 200, { ok: true, demo: f.demo });
+    return send(res, 200, {
+      ok: true,
+      demo: { ...f.demo, gateway: GATEWAY_DEMO, selfGateway: gateways[1].id },
+    });
   if (req.method !== "POST") return send(res, 404, { error: "not found" });
 
   let raw = "";

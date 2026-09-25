@@ -42,6 +42,11 @@ const nextConfig = {
         permanent: true,
       })),
       {
+        source: "/accounts/:account/broadcasting",
+        destination: "/gateways/:account",
+        permanent: true,
+      },
+      {
         source: "/transcoders",
         destination: "/orchestrators",
         permanent: true,
