@@ -129,18 +129,24 @@ function NetworkKpis({ protocol }: { protocol?: Protocol }) {
   return (
     <KpiStrip cols={2} className="h-full">
       <Kpi
-        label="Total staked"
-        value={formatLPT(protocol.totalActiveStake, { compact: true })}
-        sub={`${formatPercent(protocol.participationRate, {
-          decimals: 2,
-        })} participation`}
+        label="Participation"
+        value={formatPercent(protocol.participationRate, { decimals: 2 })}
+        sub={`${formatLPT(protocol.totalActiveStake, {
+          compact: true,
+        })} staked · target ${formatPercent(protocol.targetBondingRate, {
+          decimals: 0,
+        })}`}
       />
       <Kpi
         label="Inflation per round"
         value={formatPercent(protocol.inflation / 1e7, { decimals: 4 })}
-        sub={`Target bonding rate ${formatPercent(protocol.targetBondingRate, {
-          decimals: 0,
-        })}`}
+        sub={
+          // The minter nudges inflation toward the target bonding rate:
+          // up while participation is below it, down while above.
+          protocol.participationRate < protocol.targetBondingRate
+            ? "Rising: participation is below target"
+            : "Falling: participation is above target"
+        }
       />
       <Kpi
         label="Fee volume, all time"

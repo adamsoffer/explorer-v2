@@ -149,17 +149,22 @@ export function Onboarding() {
         <SectionHeader title="The network today" />
         <KpiStrip>
           <Kpi
-            label="Total staked"
+            label="Participation"
             value={
               protocol ? (
-                formatLPT(protocol.totalActiveStake, { compact: true })
+                formatPercent(protocol.participationRate)
               ) : (
                 <Skeleton className="h-6 w-24" />
               )
             }
             sub={
               protocol
-                ? `${formatPercent(protocol.participationRate)} of supply`
+                ? `${formatLPT(protocol.totalActiveStake, {
+                    compact: true,
+                  })} staked · target ${formatPercent(
+                    protocol.targetBondingRate,
+                    { decimals: 0 }
+                  )}`
                 : undefined
             }
           />
