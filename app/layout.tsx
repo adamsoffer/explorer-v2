@@ -12,7 +12,15 @@ const TITLE = "Livepeer Explorer";
 const DESCRIPTION =
   "Track your Livepeer stake, rewards and fees across every wallet. Delegate to orchestrators and take part in governance.";
 
+/**
+ * Share images need absolute URLs. Without `SITE_URL`, Next builds them
+ * from Vercel's system variables (`VERCEL_URL` and friends), and falls back
+ * to localhost when a project doesn't expose those to the build.
+ */
+const SITE_URL = process.env.SITE_URL;
+
 export const metadata: Metadata = {
+  metadataBase: SITE_URL ? new URL(SITE_URL) : undefined,
   title: { default: TITLE, template: `%s · ${TITLE}` },
   description: DESCRIPTION,
   applicationName: TITLE,
