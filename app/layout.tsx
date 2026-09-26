@@ -23,7 +23,12 @@ export const metadata: Metadata = {
     siteName: TITLE,
     type: "website",
   },
-  twitter: { card: "summary", title: TITLE, description: DESCRIPTION },
+  // The image comes from app/opengraph-image.jpg; X falls back to it.
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
