@@ -157,7 +157,10 @@ function NetworkKpis({ protocol }: { protocol?: Protocol }) {
       <Kpi
         label="Participation"
         value={formatPercent(protocol.participationRate, { decimals: 2 })}
-        sub={`${formatLPT(protocol.totalActiveStake, {
+        // Participation is staked LPT over total supply, so show both.
+        sub={`${formatNumber(protocol.totalActiveStake, {
+          compact: true,
+        })} of ${formatLPT(protocol.totalSupply, {
           compact: true,
         })} staked · target ${formatPercent(protocol.targetBondingRate, {
           decimals: 0,
