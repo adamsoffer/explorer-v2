@@ -4,7 +4,9 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
 import {
   fetchGateway,
@@ -12,10 +14,13 @@ import {
   fetchGateways,
 } from "@/lib/subgraph/gateways";
 import {
+  type FeedFilter,
   fetchAccountEvents,
   fetchAddressEvents,
   fetchDays,
   fetchEvents,
+  fetchFeedPage,
+  fetchFeedSince,
   fetchGatewayEvents,
   fetchGovernance,
   fetchOrchestrator,
@@ -141,6 +146,57 @@ export function useRewardProgress(round: number | undefined) {
     staleTime: 10_000,
     refetchInterval: 30_000,
   });
+}
+
+/**
+ * The protocol feed for a filter: pages of older events on request, plus a
+ * live head polling for anything newer than the first page. The head only
+ * ever asks for newer events, so pages already loaded never shift.
+ */
+export function useFeed(filter: FeedFilter, enabled = true) {
+  const queryClient = useQueryClient();
+  const pages = useInfiniteQuery({
+    queryKey: ["feed", filter],
+    queryFn: ({ pageParam }) => fetchFeedPage(filter, pageParam ?? undefined),
+    initialPageParam: null as number | null,
+    getNextPageParam: (last) => last.next,
+    enabled,
+    staleTime: Infinity,
+  });
+  const base = pages.data?.pages[0]?.events[0]?.timestamp;
+  const head = useQuery({
+    queryKey: ["feed-since", filter, base],
+    queryFn: () => fetchFeedSince(filter, base!),
+    enabled: enabled && base != null,
+    refetchInterval: 15_000,
+  });
+
+  // A head this long has probably missed some: start again from the top.
+  useEffect(() => {
+    if ((head.data?.length ?? 0) >= 100)
+      queryClient.resetQueries({ queryKey: ["feed", filter] });
+  }, [head.data, filter, queryClient]);
+
+  const events = useMemo(() => {
+    const seen = new Set<string>();
+    return [
+      ...(head.data ?? []),
+      ...(pages.data?.pages ?? []).flatMap((p) => p.events),
+    ]
+      .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [head.data, pages.data]);
+
+  return {
+    events: pages.data ? events : undefined,
+    isLoading: pages.isLoading,
+    error: pages.error ?? head.error,
+    refetch: pages.refetch,
+    updatedAt: Math.max(head.dataUpdatedAt, pages.dataUpdatedAt),
+    hasMore: pages.hasNextPage,
+    loadingMore: pages.isFetchingNextPage,
+    loadMore: () => pages.fetchNextPage(),
+  };
 }
 
 /** Everything involving an address, newest first, a page at a time. */

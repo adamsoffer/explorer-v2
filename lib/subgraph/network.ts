@@ -1071,6 +1071,118 @@ export async function fetchTransactionEvents(
     .map(toEvent);
 }
 
+/* ── The protocol feed, a page at a time ─────────────────────────────────── */
+
+/** Event collections behind each Activity filter. */
+export const FEED_COLLECTIONS = {
+  fees: ["winningTicketRedeemedEvents", "withdrawFeesEvents"],
+  staking: [
+    "bondEvents",
+    "unbondEvents",
+    "rebondEvents",
+    "transferBondEvents",
+    "withdrawStakeEvents",
+  ],
+  rewards: ["rewardEvents", "newRoundEvents"],
+  governance: ["voteEvents", "treasuryVoteEvents", "pollCreatedEvents"],
+  orchestrators: [
+    "transcoderUpdateEvents",
+    "transcoderActivatedEvents",
+    "transcoderDeactivatedEvents",
+  ],
+  gateways: ["depositFundedEvents", "reserveFundedEvents", "withdrawalEvents"],
+} as const;
+
+export type FeedFilter = "all" | keyof typeof FEED_COLLECTIONS;
+
+const FEED_PAGE = 50;
+
+const feedQuery = (
+  filter: FeedFilter,
+  bound: "timestamp_lte" | "timestamp_gt"
+) =>
+  filter === "all"
+    ? /* GraphQL */ `
+      query FeedTransactions($first: Int!, $at: Int!) {
+        transactions(first: $first, orderBy: timestamp, orderDirection: desc, where: { ${bound}: $at }) {
+          timestamp
+          events { ${EVENT_FIELDS} }
+        }
+      }`
+    : /* GraphQL */ `
+      query FeedCollections($first: Int!, $at: Int!) {
+        ${FEED_COLLECTIONS[filter]
+          .map(
+            (c) =>
+              `${c}(first: $first, orderBy: timestamp, orderDirection: desc, where: { ${bound}: $at }) { ${EVENT_FIELDS} }`
+          )
+          .join("\n")}
+      }`;
+
+type RawTransaction = { timestamp: number; events: RawEvent[] | null };
+
+/** A transaction list as the one collection `mergeEventPage` expects. */
+const txEvents = (txs: RawTransaction[]) =>
+  txs.flatMap((t) =>
+    (t.events ?? []).filter((e) => EVENT_TYPES.includes(e.__typename))
+  );
+
+/**
+ * One page of the feed for a filter, newest first, at or before `before`.
+ * "All" pages through transactions; a filter reads its own collections, so
+ * filtered views reach as far back as you page instead of only what the
+ * latest transactions happened to hold.
+ */
+export async function fetchFeedPage(
+  filter: FeedFilter,
+  before?: number
+): Promise<EventPage> {
+  const at = before ?? 2 ** 31 - 1;
+  if (filter === "all") {
+    const { transactions } = await querySubgraph<{
+      transactions: RawTransaction[];
+    }>(feedQuery("all", "timestamp_lte"), { first: FEED_PAGE, at });
+    // A full page may stop partway through a timestamp: cut there, as
+    // mergeEventPage does per collection.
+    const full = transactions.length >= FEED_PAGE;
+    const cutoff = full
+      ? Number(transactions[transactions.length - 1].timestamp)
+      : 0;
+    const events = txEvents(transactions)
+      .map(toEvent)
+      .filter((e) => cutoff === 0 || e.timestamp > cutoff);
+    return { events, next: cutoff || null };
+  }
+  const data = await querySubgraph<Record<string, RawEvent[]>>(
+    feedQuery(filter, "timestamp_lte"),
+    { first: FEED_PAGE, at }
+  );
+  return mergeEventPage(data, FEED_PAGE);
+}
+
+/** Events newer than `after`, for keeping the top of the feed live. */
+export async function fetchFeedSince(
+  filter: FeedFilter,
+  after: number
+): Promise<ActivityEvent[]> {
+  if (filter === "all") {
+    const { transactions } = await querySubgraph<{
+      transactions: RawTransaction[];
+    }>(feedQuery("all", "timestamp_gt"), { first: 100, at: after });
+    return txEvents(transactions)
+      .map(toEvent)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }
+  const data = await querySubgraph<Record<string, RawEvent[]>>(
+    feedQuery(filter, "timestamp_gt"),
+    { first: 100, at: after }
+  );
+  return Object.values(data)
+    .flat()
+    .map(toEvent)
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
 const ORCHESTRATOR_UPDATES = /* GraphQL */ `
   query OrchestratorUpdates($ids: [String!]!, $since: Int!) {
     transcoderUpdateEvents(

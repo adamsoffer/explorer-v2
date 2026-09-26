@@ -25,7 +25,7 @@ import { shortAddress } from "@/lib/format";
 import { useLiveFeed } from "@/lib/hooks/live-feed";
 import {
   useAddressEvents,
-  useEvents,
+  useFeed,
   useOrchestrators,
   useTransactionEvents,
 } from "@/lib/hooks/queries";
@@ -93,11 +93,15 @@ function parseQuery(raw: string) {
   return null;
 }
 
-/** The live feed of the latest protocol events. */
-function LiveActivity({ filter }: { filter: Filter }) {
-  const { data, isLoading, error, refetch } = useEvents(200);
-  const { shown, fresh, waiting, reveal } = useLiveFeed(data);
-  const events = useMemo(() => byType(shown, filter), [shown, filter]);
+/** The protocol feed: the latest events live, older ones on request. */
+function LiveActivity({
+  feed,
+  filter,
+}: {
+  feed: ReturnType<typeof useFeed>;
+  filter: Filter;
+}) {
+  const { shown, fresh, waiting, reveal } = useLiveFeed(feed.events);
   return (
     <>
       {waiting > 0 && (
@@ -112,15 +116,28 @@ function LiveActivity({ filter }: { filter: Filter }) {
           </button>
         </div>
       )}
-      {error && !data ? (
-        <ErrorNotice error={error} onRetry={() => refetch()} />
+      {feed.error && !feed.events ? (
+        <ErrorNotice error={feed.error} onRetry={() => feed.refetch()} />
       ) : (
-        <ActivityList
-          events={events}
-          loading={isLoading || !shown}
-          emptyText={EMPTY[filter]}
-          fresh={fresh}
-        />
+        <div className="flex flex-col gap-3">
+          <ActivityList
+            events={shown}
+            loading={feed.isLoading || !shown}
+            emptyText={EMPTY[filter]}
+            fresh={fresh}
+          />
+          {feed.hasMore && shown && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-center"
+              disabled={feed.loadingMore}
+              onClick={() => feed.loadMore()}
+            >
+              {feed.loadingMore ? "Loading…" : "Show more"}
+            </Button>
+          )}
+        </div>
       )}
     </>
   );
@@ -204,6 +221,7 @@ function ActivityView() {
   const [input, setInput] = useState(urlQuery);
   const [filter, setFilter] = useState<Filter>("all");
   const { data: orchestrators } = useOrchestrators();
+  const feed = useFeed(filter, !urlQuery);
 
   // Follow the URL (back/forward, links from other pages).
   useEffect(() => setInput(urlQuery), [urlQuery]);
@@ -241,7 +259,14 @@ function ActivityView() {
       <PageHeader
         title="Activity"
         description="Every protocol event on Arbitrum as it's indexed: fees earned, delegations, reward calls, votes and gateway deposits. Search an address to see everything it's been part of."
-        actions={searching ? undefined : <LiveHeader />}
+        actions={
+          searching ? undefined : (
+            <LiveStatus
+              updatedAt={feed.updatedAt}
+              failing={Boolean(feed.error)}
+            />
+          )
+        }
       />
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -336,16 +361,11 @@ function ActivityView() {
       ) : tx ? (
         <TransactionActivity hash={tx} />
       ) : searching ? null : (
-        <LiveActivity filter={filter} />
+        // A new filter is a new feed, not a batch of arrivals.
+        <LiveActivity key={filter} feed={feed} filter={filter} />
       )}
     </Page>
   );
-}
-
-/** The live indicator, only while showing the live feed. */
-function LiveHeader() {
-  const { dataUpdatedAt, error } = useEvents(200);
-  return <LiveStatus updatedAt={dataUpdatedAt} failing={Boolean(error)} />;
 }
 
 export default function ActivityPage() {

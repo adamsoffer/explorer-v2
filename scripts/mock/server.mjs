@@ -958,6 +958,42 @@ const resolvers = {
     };
   },
 
+  // The Activity feed, a page at a time: `timestamp_lte` pages back,
+  // `timestamp_gt` polls for anything newer.
+  FeedTransactions: ({ first = 50, at }, query) => {
+    const newer = query.includes("timestamp_gt");
+    const txs = [
+      ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),
+      ...f.transactions,
+    ]
+      .filter((t) => (newer ? t.timestamp > at : t.timestamp <= at))
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, first);
+    return {
+      transactions: txs.map((t) => ({
+        timestamp: t.timestamp,
+        events: t.events.map(shapeEvent),
+      })),
+    };
+  },
+
+  FeedCollections: ({ first = 50, at }, query) => {
+    const newer = query.includes("timestamp_gt");
+    const wanted = [...query.matchAll(/(\w+Events)\(first/g)].map((m) => m[1]);
+    const all = [
+      ...live,
+      ...f.transactions.flatMap((t) => t.events),
+      ...gatewayTickets,
+      ...gateways.flatMap((g) => g.funding),
+    ].filter((e) => (newer ? e.timestamp > at : e.timestamp <= at));
+    const out = Object.fromEntries(wanted.map((c) => [c, []]));
+    for (const e of all.sort((a, b) => b.timestamp - a.timestamp)) {
+      const key = e.__typename[0].toLowerCase() + e.__typename.slice(1) + "s";
+      if (out[key] && out[key].length < first) out[key].push(shapeEvent(e));
+    }
+    return out;
+  },
+
   Events: ({ first = 100 }) => ({
     transactions: [
       ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),
@@ -1167,7 +1203,7 @@ const server = http.createServer((req, res) => {
     }
     const t0 = performance.now();
     try {
-      const data = resolver(body.variables ?? {});
+      const data = resolver(body.variables ?? {}, body.query ?? "");
       if (VERBOSE)
         console.log(
           `[mock] ${op} ${JSON.stringify(body.variables ?? {}).slice(
