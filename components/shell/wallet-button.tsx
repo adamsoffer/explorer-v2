@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { useDisconnect } from "wagmi";
 
 import { Avatar, useIdentity } from "@/components/identity";
-import { AddWalletDialog } from "@/components/portfolio/add-wallet";
+import { useAddWallet } from "@/components/portfolio/add-wallet";
 import { TrackAddressDialog } from "@/components/portfolio/scope-bar";
 import { Button } from "@/components/ui/button";
 import {
@@ -107,7 +107,7 @@ function PortfolioSwitcher({
   const addresses = useMemo(() => accounts.map((a) => a.address), [accounts]);
   const [scope, setScope] = useViewScope(addresses);
   const { data } = usePortfolio(addresses);
-  const [addingWallet, setAddingWallet] = useState(false);
+  const addWallet = useAddWallet();
   const [tracking, setTracking] = useState(false);
 
   const stakeOf = (address: string) => {
@@ -208,7 +208,7 @@ function PortfolioSwitcher({
             </MenuItem>
           ))}
           <MenuSeparator />
-          <MenuItem onClick={() => setAddingWallet(true)}>
+          <MenuItem onClick={addWallet.start}>
             <Wallet /> Add wallet
           </MenuItem>
           <MenuItem onClick={() => setTracking(true)}>
@@ -240,7 +240,7 @@ function PortfolioSwitcher({
           )}
         </MenuContent>
       </Menu>
-      <AddWalletDialog open={addingWallet} onOpenChange={setAddingWallet} />
+      {addWallet.dialog}
       <TrackAddressDialog
         open={tracking}
         onOpenChange={setTracking}

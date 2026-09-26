@@ -50,6 +50,25 @@ function Option({
 }
 
 /**
+ * Starts adding a wallet. With nothing connected there's no choice to make,
+ * so it goes straight to the connect screen; otherwise it opens the dialog
+ * below, which offers another account or another wallet app.
+ */
+export function useAddWallet() {
+  const { isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const [open, setOpen] = useState(false);
+  const start = () => {
+    if (!isConnected && openConnectModal) openConnectModal();
+    else setOpen(true);
+  };
+  return {
+    start,
+    dialog: <AddWalletDialog open={open} onOpenChange={setOpen} />,
+  };
+}
+
+/**
  * Adds a wallet you can act from. Wallets expose one active account to a
  * site, so "adding" means getting the wallet to hand over another account —
  * the portfolio remembers every account it has seen (see WalletMemory).
