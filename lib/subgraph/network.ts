@@ -995,6 +995,7 @@ const REWARD_PROGRESS = /* GraphQL */ `
         id
       }
       rewardTokens
+      fees
     }
   }
 `;
@@ -1005,13 +1006,19 @@ export type RewardProgress = {
   total: number;
   called: number;
   minted: number;
+  /** ETH in fees earned by the active set so far this round. */
+  fees: number;
 };
 
 export async function fetchRewardProgress(
   round: number
 ): Promise<RewardProgress> {
   const { pools } = await querySubgraph<{
-    pools: { delegate: { id: string }; rewardTokens: string | null }[];
+    pools: {
+      delegate: { id: string };
+      rewardTokens: string | null;
+      fees: string | null;
+    }[];
   }>(REWARD_PROGRESS, { round: String(round) });
   const called = pools.filter((p) => p.rewardTokens != null);
   return {
@@ -1019,6 +1026,7 @@ export async function fetchRewardProgress(
     total: pools.length,
     called: called.length,
     minted: called.reduce((s, p) => s + Number(p.rewardTokens), 0),
+    fees: pools.reduce((s, p) => s + Number(p.fees ?? 0), 0),
   };
 }
 

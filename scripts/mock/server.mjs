@@ -939,9 +939,12 @@ const resolvers = {
           const p = (f.pools.get(t.id) ?? []).find((x) => x.round === r);
           const due = seeded(`${t.id}-${r}`)() * 0.55;
           const called = r < cur || (elapsed >= due && p?.rewardTokens);
+          // Fees accrue through the round as tickets are redeemed.
+          const share = r < cur ? 1 : Math.min(1, Math.max(0, elapsed));
           return {
             delegate: { id: t.id },
             rewardTokens: called ? p?.rewardTokens ?? "100" : null,
+            fees: (Number(p?.fees ?? 0) * share).toFixed(8),
           };
         }),
     };

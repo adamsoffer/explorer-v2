@@ -377,7 +377,11 @@ function RewardCalls({ round }: { round: number }) {
           <span className="font-mono text-foreground tabular-nums">
             {formatLPT(data.minted, { compact: true })}
           </span>{" "}
-          minted
+          minted ·{" "}
+          <span className="font-mono text-foreground tabular-nums">
+            {formatETH(data.fees)}
+          </span>{" "}
+          in fees
         </span>
       )}
     </div>
