@@ -29,20 +29,30 @@ function subscribe(onChange: () => void) {
   };
 }
 
+function write(next: string) {
+  memory = next;
+  try {
+    window.localStorage.setItem(KEY, next);
+  } catch {
+    // blocked storage: kept in memory for this page
+  }
+  window.dispatchEvent(new Event(EVENT));
+}
+
+/**
+ * A wallet was just connected, or the wallet switched accounts: show it,
+ * unless you're looking at all wallets, which already includes it.
+ */
+export function followActiveWallet(address: string) {
+  if (read() !== "all") write(address.toLowerCase());
+}
+
 export function useViewScope(accounts: string[]) {
   const raw = useSyncExternalStore(subscribe, read, () => "all");
   // A view that no longer exists (forgotten wallet) falls back to all.
   const scope = raw !== "all" && !accounts.includes(raw) ? "all" : raw;
 
-  const setScope = useCallback((next: string) => {
-    memory = next;
-    try {
-      window.localStorage.setItem(KEY, next);
-    } catch {
-      // blocked storage: kept in memory for this page
-    }
-    window.dispatchEvent(new Event(EVENT));
-  }, []);
+  const setScope = useCallback((next: string) => write(next), []);
 
   return [scope, setScope] as const;
 }
