@@ -16,13 +16,14 @@ import { isAddress } from "viem";
 import { normalize } from "viem/ens";
 import { useEnsAddress } from "wagmi";
 
-import { Avatar, useIdentity } from "@/components/identity";
+import { Avatar, useEnsNames, useIdentity } from "@/components/identity";
 import { THEME_OPTIONS, useTheme } from "@/components/theme";
 import { cn } from "@/lib/cn";
 import { L1_CHAIN } from "@/lib/config";
 import { formatETH, formatLPT, shortAddress } from "@/lib/format";
 import { useGateways, useOrchestrators } from "@/lib/hooks/queries";
 import { useWatchlist } from "@/lib/hooks/watchlist";
+import { searchRank } from "@/lib/search";
 
 import { NAV } from "./nav";
 
@@ -65,6 +66,12 @@ export function CommandSearch({
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const { data: orchestrators } = useOrchestrators();
+  const orchestratorIds = useMemo(
+    () => (orchestrators ?? []).map((o) => o.id),
+    [orchestrators]
+  );
+  // Resolved as soon as search opens, so typing part of a name finds it.
+  const names = useEnsNames(orchestratorIds, open);
   // Only fetched once search opens: most visits never need it.
   const { data: gateways } = useGateways({ enabled: open });
   const { add, list } = useWatchlist();
@@ -177,7 +184,11 @@ export function CommandSearch({
 
     if (orchestrators && !target) {
       const matches = orchestrators
-        .filter((o) => !q || o.id.includes(q))
+        .map((o) => ({ o, rank: searchRank(o.id, names.get(o.id), q) }))
+        .filter((m) => m.rank != null)
+        // Name-prefix matches first; otherwise keep the stake order.
+        .sort((a, b) => a.rank! - b.rank!)
+        .map((m) => m.o)
         .slice(0, q ? 8 : 5);
       for (const o of matches) {
         out.push({
@@ -221,6 +232,7 @@ export function CommandSearch({
     target,
     ensName,
     orchestrators,
+    names,
     gateways,
     list,
     router,

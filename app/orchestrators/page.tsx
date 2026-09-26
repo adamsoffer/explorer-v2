@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
-import { Avatar, useIdentity } from "@/components/identity";
+import { Avatar, useEnsNames, useIdentity } from "@/components/identity";
 import {
   Card,
   EmptyState,
@@ -21,6 +21,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { formatETH, formatLPT, formatNumber, shortAddress } from "@/lib/format";
 import { useOrchestrators, useProtocol } from "@/lib/hooks/queries";
+import { searchRank } from "@/lib/search";
 import type { Orchestrator } from "@/lib/subgraph/network";
 
 type SortKey =
@@ -121,6 +122,9 @@ function OrchestratorTable() {
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [filter, setFilter] = useState<"all" | "reliable">("all");
   const [amount, setAmount] = useState("1000");
+  const ids = useMemo(() => (data ?? []).map((o) => o.id), [data]);
+  // The rows resolve these names anyway; the filter reads the same cache.
+  const names = useEnsNames(ids, true);
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -129,13 +133,13 @@ function OrchestratorTable() {
       .sort((a, b) => b.totalStake - a.totalStake)
       .map((o, i) => ({ o, rank: i + 1 }));
     return ranked
-      .filter(({ o }) => !q || o.id.includes(q))
+      .filter(({ o }) => searchRank(o.id, names.get(o.id), q) != null)
       .filter(({ o }) => filter === "all" || o.rewardCalls >= o.rewardWindow)
       .sort((a, b) => {
         const d = SORTS[sort](a.o) - SORTS[sort](b.o);
         return dir === "desc" ? -d : d;
       });
-  }, [data, query, sort, dir, filter]);
+  }, [data, query, sort, dir, filter, names]);
 
   const onSort = (k: SortKey) => {
     if (k === sort) setDir(dir === "desc" ? "asc" : "desc");
@@ -174,8 +178,8 @@ function OrchestratorTable() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by address"
-            aria-label="Filter orchestrators by address"
+            placeholder="Filter by name or address"
+            aria-label="Filter orchestrators by ENS name or address"
             className="pl-8"
           />
         </div>
@@ -443,7 +447,7 @@ function OrchestratorTable() {
             {!isLoading && rows.length === 0 && (
               <EmptyState
                 title="No orchestrators match"
-                description="Try a different address or clear the filter."
+                description="Try a different name or address, or clear the filter."
               />
             )}
           </Card>

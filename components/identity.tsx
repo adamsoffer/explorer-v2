@@ -3,7 +3,7 @@
 import { useQueries } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { normalize } from "viem/ens";
 import { useConfig, useEnsAvatar, useEnsName } from "wagmi";
 import { getEnsNameQueryOptions } from "wagmi/query";
@@ -184,7 +184,19 @@ export function Identity({
  */
 export function useEnsNames(addresses: string[], enabled: boolean) {
   const config = useConfig();
-  const results = useQueries({
+  // One Map per change in the resolved names, not per render, so callers
+  // can depend on it in memos.
+  const combine = useCallback(
+    (results: { data?: string | null }[]) => {
+      const map = new Map<string, string>();
+      results.forEach((r, i) => {
+        if (r.data) map.set(addresses[i], r.data.toLowerCase());
+      });
+      return map;
+    },
+    [addresses]
+  );
+  return useQueries({
     queries: addresses.map((address) => ({
       ...getEnsNameQueryOptions(config, {
         address: address as `0x${string}`,
@@ -194,10 +206,6 @@ export function useEnsNames(addresses: string[], enabled: boolean) {
       staleTime: 60 * 60_000,
       retry: false,
     })),
+    combine,
   });
-  const map = new Map<string, string>();
-  results.forEach((r, i) => {
-    if (r.data) map.set(addresses[i], r.data.toLowerCase());
-  });
-  return map;
 }
