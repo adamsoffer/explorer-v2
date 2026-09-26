@@ -9,6 +9,10 @@ import {
   Eye,
   Layers,
   LogOut,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  UserRound,
   Wallet,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -18,6 +22,7 @@ import { useDisconnect } from "wagmi";
 
 import { Avatar, useIdentity } from "@/components/identity";
 import { useAddWallet } from "@/components/portfolio/add-wallet";
+import { RenameWalletDialog } from "@/components/portfolio/rename-wallet";
 import { TrackAddressDialog } from "@/components/portfolio/scope-bar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,15 +30,20 @@ import {
   MenuContent,
   MenuItem,
   MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
   MenuTrigger,
 } from "@/components/ui/misc";
 import { cn } from "@/lib/cn";
-import { formatLPT, fromWei } from "@/lib/format";
+import { formatLPT, fromWei, shortAddress } from "@/lib/format";
 import { usePortfolio } from "@/lib/hooks/queries";
 import { useViewScope } from "@/lib/hooks/view-scope";
 import {
   type PortfolioAccount,
+  useKnownWallets,
   usePortfolioAccounts,
+  useWatchlist,
 } from "@/lib/hooks/watchlist";
 
 const SOURCE_LABEL = {
@@ -106,6 +116,9 @@ function PortfolioSwitcher({
   const { data } = usePortfolio(addresses);
   const addWallet = useAddWallet();
   const [tracking, setTracking] = useState(false);
+  const [renaming, setRenaming] = useState<PortfolioAccount | null>(null);
+  const watched = useWatchlist();
+  const known = useKnownWallets();
 
   const stakeOf = (address: string) => {
     if (!data) return null;
@@ -123,6 +136,30 @@ function PortfolioSwitcher({
   const view = (next: string) => {
     setScope(next);
     if (pathname !== "/") router.push("/");
+  };
+
+  const copy = async (address: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      toast.success("Address copied");
+    } catch {
+      // clipboard blocked
+    }
+  };
+
+  // Removing only makes the explorer forget the address, so offer an undo
+  // rather than asking first.
+  const removeAccount = (a: PortfolioAccount) => {
+    const store = a.source === "watched" ? watched : known;
+    if (a.source === "wallet") disconnect();
+    store.remove(a.address);
+    if (scope === a.address) setScope("all");
+    toast(`Removed ${a.label ?? shortAddress(a.address)}`, {
+      action: {
+        label: "Undo",
+        onClick: () => store.add(a.address, a.label),
+      },
+    });
   };
 
   return (
@@ -178,31 +215,63 @@ function PortfolioSwitcher({
             </MenuItem>
           )}
           {accounts.map((a) => (
-            <MenuItem
-              key={a.address}
-              className="h-auto py-2"
-              onClick={() => view(a.address)}
-            >
-              <AccountAvatar
-                address={a.address}
-                active={a.source === "wallet"}
-                size={28}
-              />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">
-                  <AccountName account={a} />
+            <div key={a.address} className="flex items-center gap-0.5">
+              <MenuItem
+                className="h-auto min-w-0 flex-1 py-2"
+                onClick={() => view(a.address)}
+              >
+                <AccountAvatar
+                  address={a.address}
+                  active={a.source === "wallet"}
+                  size={28}
+                />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">
+                    <AccountName account={a} />
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    <span className="font-mono tabular-nums">
+                      {lpt(stakeOf(a.address))}
+                    </span>{" "}
+                    · {SOURCE_LABEL[a.source]}
+                  </span>
                 </span>
-                <span className="truncate text-[11px] text-muted-foreground">
-                  <span className="font-mono tabular-nums">
-                    {lpt(stakeOf(a.address))}
-                  </span>{" "}
-                  · {SOURCE_LABEL[a.source]}
-                </span>
-              </span>
-              {viewing?.address === a.address && (
-                <Check className="text-green-bright!" />
-              )}
-            </MenuItem>
+                {viewing?.address === a.address && (
+                  <Check className="text-green-bright!" />
+                )}
+              </MenuItem>
+              <MenuSub>
+                <MenuSubTrigger
+                  aria-label={`Actions for ${a.label ?? a.address}`}
+                  className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground data-highlighted:bg-hover data-popup-open:bg-hover data-popup-open:text-foreground"
+                >
+                  <MoreHorizontal className="size-4" />
+                </MenuSubTrigger>
+                <MenuSubContent>
+                  <MenuItem
+                    onClick={() => router.push(`/accounts/${a.address}`)}
+                  >
+                    <UserRound /> View account
+                  </MenuItem>
+                  <MenuItem onClick={() => copy(a.address)}>
+                    <Copy /> Copy address
+                  </MenuItem>
+                  <MenuItem onClick={() => setRenaming(a)}>
+                    <Pencil /> Rename…
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    className="text-destructive [&_svg]:text-destructive"
+                    onClick={() => removeAccount(a)}
+                  >
+                    <Trash2 />
+                    {a.source === "wallet"
+                      ? "Disconnect and remove"
+                      : "Remove from portfolio"}
+                  </MenuItem>
+                </MenuSubContent>
+              </MenuSub>
+            </div>
           ))}
           <MenuSeparator />
           {/* With nothing connected, adding a wallet is connecting one. */}
@@ -215,18 +284,6 @@ function PortfolioSwitcher({
           {connected && activeWallet && (
             <>
               <MenuSeparator />
-              <MenuItem
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(activeWallet.address);
-                    toast.success("Address copied");
-                  } catch {
-                    // clipboard blocked
-                  }
-                }}
-              >
-                <Copy /> Copy active address
-              </MenuItem>
               <MenuItem onClick={() => disconnect()}>
                 <LogOut /> Disconnect
               </MenuItem>
@@ -235,6 +292,10 @@ function PortfolioSwitcher({
         </MenuContent>
       </Menu>
       {addWallet.dialog}
+      <RenameWalletDialog
+        account={renaming}
+        onOpenChange={(o) => !o && setRenaming(null)}
+      />
       <TrackAddressDialog
         open={tracking}
         onOpenChange={setTracking}

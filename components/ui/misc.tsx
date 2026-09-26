@@ -129,6 +129,38 @@ export function MenuContent({
   );
 }
 
+export const MenuSub = MenuPrimitive.SubmenuRoot;
+export const MenuSubTrigger = MenuPrimitive.SubmenuTrigger;
+
+/** A submenu's popup, opening beside its trigger. */
+export function MenuSubContent({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <MenuPrimitive.Portal>
+      <MenuPrimitive.Positioner
+        side="inline-end"
+        align="start"
+        sideOffset={4}
+        className="z-[121]"
+      >
+        <MenuPrimitive.Popup
+          className={cn(
+            "min-w-44 origin-(--transform-origin) rounded-xl border border-hairline bg-popover p-1 text-sm shadow-(--shadow-popover) outline-none transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
+            className
+          )}
+        >
+          {children}
+        </MenuPrimitive.Popup>
+      </MenuPrimitive.Positioner>
+    </MenuPrimitive.Portal>
+  );
+}
+
 export function MenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
   return (
     <MenuPrimitive.Item
