@@ -201,13 +201,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-screen w-[244px] shrink-0 border-r border-hairline bg-background lg:block">
+      {/*
+        Fixed, not sticky: wallet modals lock scrolling with overflow:hidden
+        on <body>, which makes body the sticky container and pins these to
+        the top of the page instead of the screen.
+      */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[244px] border-r border-hairline bg-background lg:block">
         <SidebarBody onSearch={() => setSearchOpen(true)} />
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col pt-14 lg:pt-0 lg:pl-[244px]">
         {/* Mobile / tablet top bar */}
-        <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-hairline bg-background/80 px-4 backdrop-blur-md lg:hidden">
+        <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2 border-b border-hairline bg-background/80 px-4 backdrop-blur-md lg:hidden">
           <button
             type="button"
             aria-label="Open navigation"

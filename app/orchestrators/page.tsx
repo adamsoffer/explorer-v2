@@ -34,7 +34,7 @@ type SortKey =
   | "delegators";
 
 const RELIABLE_HINT =
-  "Reliable orchestrators called reward in every completed round they were active over the last 30 (30/30 in Reward calls). A missed call means its delegators earn no inflation rewards that round. It doesn't measure transcoding performance or fees.";
+  "Reliable orchestrators called reward in every completed round they were active over the last 30 (30/30 in Reward calls). A missed call means its delegators earn no inflation rewards that round. It doesn't measure how well it handles video or AI work, or the fees it earns.";
 
 const SORTS: Record<SortKey, (o: Orchestrator) => number> = {
   stake: (o) => o.totalStake,
