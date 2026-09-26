@@ -29,6 +29,7 @@ import {
 import {
   ProposalVoteForm,
   useProposalState,
+  useProposalThresholds,
 } from "@/components/governance/proposal-vote";
 import {
   proposalSeries,
@@ -41,7 +42,7 @@ import { Card, EmptyState, ErrorNotice, Page } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/misc";
-import { formatLPT, shortAddress } from "@/lib/format";
+import { formatLPT, formatPercent, shortAddress } from "@/lib/format";
 import {
   useGovernance,
   useProposalVotes,
@@ -67,6 +68,10 @@ export default function ProposalPage() {
   const nowMs = useNow(30_000);
   const proposal = governance.data?.proposals.find((p) => p.id === id);
   const chainState = useProposalState(proposal);
+  const thresholds = useProposalThresholds(
+    proposal,
+    protocol.data?.currentRound
+  );
   const [tab, setTab] = useDetailTab(TABS, "description");
   const votes = useProposalVotes(proposal ? proposal.id : undefined);
   // Voting power is fixed at the proposal's start round.
@@ -200,6 +205,50 @@ export default function ProposalPage() {
                   >
                     Round {proposal.voteEnd.toLocaleString()}
                   </DetailItem>
+                  <DetailItem label="Quorum" sub="of voting power must vote">
+                    {thresholds
+                      ? formatPercent(thresholds.quorum, { decimals: 2 })
+                      : "—"}
+                  </DetailItem>
+                  {thresholds && phase !== "pending" && (
+                    <DetailItem
+                      label="Participation"
+                      sub={
+                        <span
+                          className={
+                            thresholds.quorumReached
+                              ? "text-green-bright"
+                              : undefined
+                          }
+                        >
+                          {thresholds.quorumReached
+                            ? "Quorum reached"
+                            : phase === "active"
+                            ? "Below quorum so far"
+                            : "Quorum not reached"}
+                        </span>
+                      }
+                    >
+                      {formatPercent(thresholds.participation, {
+                        decimals: 2,
+                      })}
+                    </DetailItem>
+                  )}
+                  <DetailItem
+                    label="Quota"
+                    sub="For must exceed, of For + Against"
+                  >
+                    {thresholds
+                      ? formatPercent(thresholds.quota, { decimals: 2 })
+                      : "—"}
+                  </DetailItem>
+                  {phase !== "pending" && (
+                    <DetailItem label="For share">
+                      {thresholds?.forShare != null
+                        ? formatPercent(thresholds.forShare)
+                        : "—"}
+                    </DetailItem>
+                  )}
                   <DetailItem label="Total votes">
                     {formatLPT(proposal.totalVotes)}
                   </DetailItem>

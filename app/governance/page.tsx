@@ -149,7 +149,7 @@ function Proposals() {
         <Section>
           <SectionHeader
             title="Past"
-            description="Outcome shown is the vote majority; quorum isn't indexed. Open a proposal for its on-chain state."
+            description="Outcome shown is the vote majority. Open a proposal for its quorum, quota and on-chain state."
             action={
               open.length === 0 ? <TallyKey series={PROPOSAL_KEY} /> : undefined
             }

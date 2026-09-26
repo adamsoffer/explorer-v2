@@ -8,6 +8,7 @@ import { bondingVotes } from "@/lib/abis/BondingVotes";
 import { livepeerGovernor } from "@/lib/abis/LivepeerGovernor";
 import { L2_CHAIN } from "@/lib/config";
 import { formatLPT, fromWei } from "@/lib/format";
+import { proposalThresholds } from "@/lib/governance/thresholds";
 import type { TreasuryProposal } from "@/lib/subgraph/network";
 
 import { toProposalId, useControllerContract } from "./model";
@@ -29,6 +30,58 @@ export function useProposalState(proposal: TreasuryProposal | undefined) {
     },
   });
   return data == null ? null : Number(data);
+}
+
+/**
+ * Quorum and quota for a treasury proposal, read from the governor. Neither
+ * is indexed, so these come from the chain. Voting power is fixed at the
+ * snapshot round, which the contracts only answer for once it has passed:
+ * before then, use the latest round they can.
+ */
+export function useProposalThresholds(
+  proposal: TreasuryProposal | undefined,
+  currentRound: number | undefined
+) {
+  const governor = useControllerContract("LivepeerGovernor");
+  const votes = useControllerContract("BondingVotes");
+  const snapshot =
+    proposal && currentRound != null
+      ? BigInt(Math.min(proposal.voteStart, currentRound - 1))
+      : null;
+  const enabled = snapshot != null;
+  const quorum = useReadContract({
+    address: governor,
+    abi: livepeerGovernor,
+    functionName: "quorum",
+    args: [snapshot ?? 0n],
+    chainId: L2_CHAIN.id,
+    query: { enabled: Boolean(governor && enabled) },
+  });
+  const supply = useReadContract({
+    address: votes,
+    abi: bondingVotes,
+    functionName: "getPastTotalSupply",
+    args: [snapshot ?? 0n],
+    chainId: L2_CHAIN.id,
+    query: { enabled: Boolean(votes && enabled) },
+  });
+  const quota = useReadContract({
+    address: governor,
+    abi: livepeerGovernor,
+    functionName: "quota",
+    chainId: L2_CHAIN.id,
+    query: { enabled: Boolean(governor) },
+  });
+  if (!proposal || quorum.data == null || supply.data == null) return null;
+  if (quota.data == null) return null;
+  return proposalThresholds({
+    quorumVotes: fromWei(quorum.data),
+    totalSupply: fromWei(supply.data),
+    quotaPpm: Number(quota.data),
+    forVotes: proposal.forVotes,
+    againstVotes: proposal.againstVotes,
+    abstainVotes: proposal.abstainVotes,
+  });
 }
 
 /**
