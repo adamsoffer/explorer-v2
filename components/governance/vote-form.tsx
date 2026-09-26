@@ -13,9 +13,11 @@ import {
 } from "wagmi";
 
 import { Button } from "@/components/ui/button";
+import { SafeProposed } from "@/components/wallet/safe-proposed";
 import { poll as pollAbi } from "@/lib/abis/Poll";
 import { cn } from "@/lib/cn";
 import { L2_CHAIN, txUrl } from "@/lib/config";
+import { useIsSafe } from "@/lib/hooks/safe";
 import { refreshWhenIndexed } from "@/lib/subgraph/sync";
 
 type Hash = `0x${string}`;
@@ -49,7 +51,7 @@ export function VoteForm({
   onConfirmed?: () => void;
   note?: React.ReactNode;
 }) {
-  const { isConnected, chainId } = useAccount();
+  const { isConnected, chainId, address } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync, isPending: switching } = useSwitchChain();
   const queryClient = useQueryClient();
@@ -60,7 +62,12 @@ export function VoteForm({
   const [signing, setSigning] = useState(false);
   const [hash, setHash] = useState<Hash | undefined>();
   const [error, setError] = useState<string | null>(null);
-  const receipt = useWaitForTransactionReceipt({ hash, chainId: L2_CHAIN.id });
+  const isSafe = useIsSafe();
+  // A Safe hands back a proposal's hash: there's no receipt to wait for.
+  const receipt = useWaitForTransactionReceipt({
+    hash: isSafe ? undefined : hash,
+    chainId: L2_CHAIN.id,
+  });
 
   useEffect(() => {
     if (!receipt.isSuccess || !hash) return;
@@ -105,6 +112,17 @@ export function VoteForm({
     );
   }
 
+  if (isSafe && hash && address) {
+    return (
+      <div className="rounded-md bg-hover px-3">
+        <SafeProposed safe={address}>
+          Your vote is queued in your Safe. It counts once the owners sign and
+          execute it before voting ends.
+        </SafeProposed>
+      </div>
+    );
+  }
+
   if (receipt.isSuccess && hash) {
     return (
       <div className="flex flex-col gap-2 rounded-md bg-hover px-3 py-3">
@@ -123,7 +141,7 @@ export function VoteForm({
     );
   }
 
-  const confirming = Boolean(hash) && receipt.isLoading;
+  const confirming = !isSafe && Boolean(hash) && receipt.isLoading;
   const busy = signing || confirming;
   const wrongChain = chainId !== L2_CHAIN.id;
 
@@ -215,7 +233,7 @@ export function VoteForm({
         <Button
           variant="primary"
           className="w-full"
-          disabled={choice == null || busy}
+          disabled={choice == null || busy || isSafe === undefined}
           onClick={submit}
         >
           {busy && <Loader2 className="animate-spin" />}

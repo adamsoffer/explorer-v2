@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SafeProposed } from "@/components/wallet/safe-proposed";
 import { bondingManager } from "@/lib/abis/BondingManager";
 import { livepeerToken } from "@/lib/abis/LivepeerToken";
 import { cn } from "@/lib/cn";
@@ -46,6 +47,7 @@ import {
 } from "@/lib/format";
 import { openAccountPicker } from "@/lib/hooks/account-picker";
 import { useOrchestrators, useProtocol } from "@/lib/hooks/queries";
+import { useIsSafe } from "@/lib/hooks/safe";
 import { useKnownWallets } from "@/lib/hooks/watchlist";
 import { useProtocolContract } from "@/lib/staking/contracts";
 import { bondHints, EMPTY_HINT, simulateHint } from "@/lib/staking/hints";
@@ -119,11 +121,20 @@ export function StakingProvider({ children }: { children: React.ReactNode }) {
 
 type Step = { key: string; label: string };
 
-function useTx(onConfirmed: () => void, signer: string | undefined) {
+function useTx(
+  onConfirmed: () => void,
+  signer: string | undefined,
+  isSafe: boolean | undefined
+) {
   const { address } = useAccount();
   const { writeContractAsync, isPending: signing, reset } = useWriteContract();
   const [hash, setHash] = useState<`0x${string}` | undefined>();
-  const receipt = useWaitForTransactionReceipt({ hash, chainId: L2_CHAIN.id });
+  // A Safe hands back a proposal's hash: there's no receipt to wait for.
+  const [proposed, setProposed] = useState(false);
+  const receipt = useWaitForTransactionReceipt({
+    hash: isSafe ? undefined : hash,
+    chainId: L2_CHAIN.id,
+  });
 
   useEffect(() => {
     if (receipt.isSuccess) onConfirmed();
@@ -143,12 +154,21 @@ function useTx(onConfirmed: () => void, signer: string | undefined) {
         chainId: L2_CHAIN.id,
       });
       setHash(h);
+      if (isSafe) setProposed(true);
       return h;
     },
-    clear: () => setHash(undefined),
+    clear: () => {
+      setHash(undefined);
+      setProposed(false);
+    },
     hash,
-    busy: signing || (Boolean(hash) && receipt.isLoading),
-    stage: signing ? "sign" : hash && receipt.isLoading ? "confirm" : null,
+    proposed,
+    busy: signing || (!isSafe && Boolean(hash) && receipt.isLoading),
+    stage: signing
+      ? "sign"
+      : !isSafe && hash && receipt.isLoading
+      ? "confirm"
+      : null,
     confirmed: receipt.isSuccess,
     block: receipt.data?.blockNumber,
   };
@@ -462,10 +482,15 @@ function StakingFlow({
     refetchAllowance();
   };
 
-  const approveTx = useTx(() => {
-    refetchAllowance();
-  }, signer);
-  const tx = useTx(refresh, signer);
+  const isSafe = useIsSafe(signer);
+  const approveTx = useTx(
+    () => {
+      refetchAllowance();
+    },
+    signer,
+    isSafe
+  );
+  const tx = useTx(refresh, signer, isSafe);
 
   const amountWei = (() => {
     try {
@@ -768,9 +793,15 @@ function StakingFlow({
   const onChainWrong = chainId !== L2_CHAIN.id;
   const currentStep = approvalFlow && !needsApproval ? 1 : 0;
   const finished = tx.confirmed;
+  // Queued in a Safe: the approval alone, or the action itself.
+  const proposed = tx.proposed || approveTx.proposed;
   const busy = approveTx.busy || tx.busy;
   const stage = approveTx.stage ?? tx.stage;
-  const pendingHash = tx.hash ?? (approveTx.busy ? approveTx.hash : undefined);
+  const pendingHash = isSafe
+    ? undefined
+    : tx.hash ?? (approveTx.busy ? approveTx.hash : undefined);
+  // Wait for the Safe check, so a proposal is never tracked as a transaction.
+  canRun = canRun && isSafe !== undefined;
 
   useEffect(() => {
     if (!tx.confirmed || !tx.hash) return;
@@ -805,13 +836,27 @@ function StakingFlow({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{finished ? successTitle : title}</DialogTitle>
-        {!finished && description && (
+        <DialogTitle>
+          {proposed
+            ? approveTx.proposed && !tx.proposed
+              ? "Approval sent to your Safe"
+              : "Sent to your Safe"
+            : finished
+            ? successTitle
+            : title}
+        </DialogTitle>
+        {!finished && !proposed && description && (
           <DialogDescription>{description}</DialogDescription>
         )}
       </DialogHeader>
       <DialogBody>
-        {finished ? (
+        {proposed ? (
+          <SafeProposed safe={signer}>
+            {approveTx.proposed && !tx.proposed
+              ? "Once your Safe's owners sign and execute the approval, open this again to finish."
+              : undefined}
+          </SafeProposed>
+        ) : finished ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-green-subtle text-green-bright">
               <Check className="size-6" />
@@ -842,7 +887,7 @@ function StakingFlow({
         )}
       </DialogBody>
       <DialogFooter>
-        {finished ? (
+        {finished || proposed ? (
           <Button
             variant="primary"
             onClick={onDone}
@@ -885,7 +930,7 @@ function StakingFlow({
           </Button>
         )}
       </DialogFooter>
-      {!finished && pendingHash && (
+      {!finished && !proposed && pendingHash && (
         <div className="-mt-2 px-5 pb-4 text-right">
           <a
             href={txUrl(pendingHash)}
