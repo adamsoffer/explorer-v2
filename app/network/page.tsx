@@ -429,13 +429,13 @@ function RewardCalls({ round }: { round: number }) {
           )}
         </FooterStat>
         <FooterStat
-          label="Minted"
+          label="Minted this round"
           className="border-t @min-[26rem]:border-t-0 @min-[26rem]:border-l"
         >
           {data ? formatLPT(data.minted, { compact: true }) : loading}
         </FooterStat>
         <FooterStat
-          label="Fees"
+          label="Fees this round"
           className="border-t border-l @min-[26rem]:border-t-0"
         >
           {data ? formatETH(data.fees) : loading}
