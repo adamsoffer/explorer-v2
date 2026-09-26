@@ -236,14 +236,17 @@ export default function ProposalPage() {
                   )}
                   <DetailItem
                     label="Quota"
-                    sub="For must exceed, of For + Against"
+                    sub="of For and Against votes must be For"
                   >
                     {thresholds
                       ? formatPercent(thresholds.quota, { decimals: 2 })
                       : "—"}
                   </DetailItem>
                   {phase !== "pending" && (
-                    <DetailItem label="For share">
+                    <DetailItem
+                      label="For share"
+                      sub="Abstain votes don't count"
+                    >
                       {thresholds?.forShare != null
                         ? formatPercent(thresholds.forShare)
                         : "—"}
