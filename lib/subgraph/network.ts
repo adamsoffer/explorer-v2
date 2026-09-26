@@ -599,6 +599,22 @@ const ORCHESTRATOR_POOLS = /* GraphQL */ `
   }
 `;
 
+/** One orchestrator's list-level stats, without its full history. */
+export async function fetchOrchestratorSummary(
+  id: string,
+  protocol: Protocol
+): Promise<Orchestrator | null> {
+  const { transcoder } = await querySubgraph<{
+    transcoder: RawTranscoder | null;
+  }>(ORCHESTRATOR, {
+    id: id.toLowerCase(),
+    windowStart: windowStart(protocol),
+  });
+  return transcoder
+    ? toOrchestrator(transcoder, protocol.currentRound, protocol.roundSeconds)
+    : null;
+}
+
 export async function fetchOrchestrator(
   id: string,
   protocol: Protocol
