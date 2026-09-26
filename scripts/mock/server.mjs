@@ -4,6 +4,16 @@
 
 import http from "node:http";
 
+import {
+  concat,
+  encodeFunctionData,
+  encodePacked,
+  getAddress,
+  keccak256,
+  size,
+  toBytes,
+} from "viem";
+
 import { generate, ROUND_SECONDS } from "./fixtures.mjs";
 
 const arg = (name, fallback) => {
@@ -453,6 +463,165 @@ function shapeGateway(g, days) {
       .map((d) => ({ date: d.date, volumeETH: d.volumeETH.toFixed(8) })),
   };
 }
+
+/* ── Safe Client Gateway: the "Cold storage" wallet is a 2-of-3 Safe ───── */
+
+// Livepeer's Arbitrum contracts, also served by the fake RPC in
+// screenshot.mjs so the app's Controller lookups resolve.
+export const CONTRACTS = {
+  BondingManager: "0x35bcf3c30594191d53231e4ff333e8a770453e40",
+  LivepeerToken: "0x289ba1701c2f088cf0faf8b3705246331cb8a839",
+  LivepeerGovernor: "0xcfe4e2879b786c3aa075813f0e364bb5accb6aa0",
+};
+const MULTI_SEND = "0x40a2accbd92bca938b02010e17a5b8929b49130d";
+const fn = (name, inputs) => ({
+  type: "function",
+  name,
+  stateMutability: "nonpayable",
+  inputs: inputs.map(([type, n]) => ({ type, name: n })),
+  outputs: [],
+});
+const ABI = {
+  approve: fn("approve", [
+    ["address", "spender"],
+    ["uint256", "amount"],
+  ]),
+  transfer: fn("transfer", [
+    ["address", "to"],
+    ["uint256", "amount"],
+  ]),
+  bondWithHint: fn("bondWithHint", [
+    ["uint256", "amount"],
+    ["address", "to"],
+    ["address", "a"],
+    ["address", "b"],
+    ["address", "c"],
+    ["address", "d"],
+  ]),
+  castVote: fn("castVote", [
+    ["uint256", "proposalId"],
+    ["uint8", "support"],
+  ]),
+  multiSend: fn("multiSend", [["bytes", "transactions"]]),
+};
+const call = (abi, args) =>
+  encodeFunctionData({ abi: [abi], functionName: abi.name, args });
+const multiSend = (calls) =>
+  call(ABI.multiSend, [
+    concat(
+      calls.map((c) =>
+        encodePacked(
+          ["uint8", "address", "uint256", "uint256", "bytes"],
+          [0, c.to, 0n, BigInt(size(c.data)), c.data]
+        )
+      )
+    ),
+  ]);
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+const SAFE = f.demo.watched;
+const lpt = (n) => BigInt(n) * 10n ** 18n;
+const safeTxs = [
+  {
+    id: `multisig_${getAddress(SAFE)}_0x${"a1".repeat(32)}`,
+    nonce: 41,
+    confirmations: 1,
+    to: MULTI_SEND,
+    data: multiSend([
+      {
+        to: CONTRACTS.LivepeerToken,
+        data: call(ABI.approve, [CONTRACTS.BondingManager, lpt(5000)]),
+      },
+      {
+        to: CONTRACTS.BondingManager,
+        data: call(ABI.bondWithHint, [
+          lpt(5000),
+          f.demo.B,
+          ZERO,
+          ZERO,
+          ZERO,
+          ZERO,
+        ]),
+      },
+    ]),
+  },
+  {
+    id: `multisig_${getAddress(SAFE)}_0x${"b2".repeat(32)}`,
+    nonce: 42,
+    confirmations: 2,
+    to: CONTRACTS.LivepeerGovernor,
+    data: call(ABI.castVote, [BigInt(f.treasuryProposals[0].id), 1]),
+  },
+  {
+    // Not a Livepeer action: the explorer leaves it out.
+    id: `multisig_${getAddress(SAFE)}_0x${"c3".repeat(32)}`,
+    nonce: 43,
+    confirmations: 0,
+    to: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+    data: call(ABI.transfer, [f.demo.wallet, 1_000_000n]),
+  },
+];
+
+/** Answers the two gateway endpoints the explorer reads. */
+function safeGateway(path) {
+  const queued =
+    /^\/safe\/v1\/chains\/42161\/safes\/(0x[0-9a-fA-F]{40})\/transactions\/queued$/.exec(
+      path
+    );
+  if (queued) {
+    if (queued[1].toLowerCase() !== SAFE)
+      return [404, { code: 404, message: "Safe not found" }];
+    return [
+      200,
+      {
+        count: safeTxs.length,
+        next: null,
+        previous: null,
+        results: [
+          { type: "LABEL", label: "Next" },
+          ...safeTxs.map((t) => ({
+            type: "TRANSACTION",
+            conflictType: "None",
+            transaction: {
+              id: t.id,
+              txStatus:
+                t.confirmations >= 2
+                  ? "AWAITING_EXECUTION"
+                  : "AWAITING_CONFIRMATIONS",
+              executionInfo: {
+                type: "MULTISIG",
+                nonce: t.nonce,
+                confirmationsRequired: 2,
+                confirmationsSubmitted: t.confirmations,
+              },
+            },
+          })),
+        ],
+      },
+    ];
+  }
+  const detail = /^\/safe\/v1\/chains\/42161\/transactions\/(.+)$/.exec(path);
+  if (detail) {
+    const t = safeTxs.find((x) => x.id === decodeURIComponent(detail[1]));
+    if (!t) return [404, { code: 404, message: "Not found" }];
+    return [
+      200,
+      {
+        txId: t.id,
+        txData: { hexData: t.data, to: { value: getAddress(t.to) } },
+      },
+    ];
+  }
+  return null;
+}
+
+/** Controller.getContract(keccak256(name)) → address, for the fake RPC. */
+export const CONTRACT_BY_HASH = Object.fromEntries(
+  Object.entries(CONTRACTS).map(([name, addr]) => [
+    keccak256(toBytes(name)),
+    addr,
+  ])
+);
 
 /* ── Live events: a trickle of new transactions while the mock runs ──────── */
 
@@ -918,6 +1087,14 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (req.method === "GET" && url.pathname.startsWith("/coingecko"))
     return send(res, 200, COINGECKO);
+  if (req.method === "GET" && url.pathname.startsWith("/safe/")) {
+    const hit = safeGateway(url.pathname);
+    return hit
+      ? send(res, hit[0], hit[1])
+      : send(res, 404, { error: "not found" });
+  }
+  if (req.method === "GET" && url.pathname === "/contracts")
+    return send(res, 200, CONTRACT_BY_HASH);
   if (req.method === "GET" && url.pathname === "/health")
     return send(res, 200, {
       ok: true,

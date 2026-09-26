@@ -29,6 +29,7 @@ import {
   usePrices,
   useProtocol,
 } from "@/lib/hooks/queries";
+import { useSafeProposals } from "@/lib/hooks/safe";
 import { useViewScope } from "@/lib/hooks/view-scope";
 import type { PortfolioAccount } from "@/lib/hooks/watchlist";
 import {
@@ -44,6 +45,7 @@ import type { Orchestrator } from "@/lib/subgraph/network";
 
 import { PortfolioHero } from "./hero";
 import { DelegationCard, type Position, Positions } from "./positions";
+import { safeInsights } from "./safe-insights";
 import { ScopeBar } from "./scope-bar";
 import {
   type Insight,
@@ -198,9 +200,11 @@ export function PortfolioView({
     12
   );
 
+  const proposals = useSafeProposals(scoped);
   const insights = useMemo<Insight[]>(() => {
     if (!view || !data) return [];
-    const out: Insight[] = [];
+    // Actions waiting on a Safe's signers come first: they're blocked on you.
+    const out: Insight[] = safeInsights(proposals, accounts);
     for (const d of delegates) {
       const o = orchestrators.get(d);
       const pos = view.positions.find((p) => p.delegate === d);
@@ -308,7 +312,7 @@ export function PortfolioView({
       });
     }
     return out;
-  }, [view, data, delegates, orchestrators, updates]);
+  }, [view, data, delegates, orchestrators, updates, proposals, accounts]);
 
   if (error) return <ErrorNotice error={error} onRetry={() => refetch()} />;
 

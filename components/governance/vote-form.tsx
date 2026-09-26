@@ -115,7 +115,18 @@ export function VoteForm({
   if (isSafe && hash && address) {
     return (
       <div className="rounded-md bg-hover px-3">
-        <SafeProposed safe={address}>
+        <SafeProposed
+          safe={address}
+          id={hash}
+          onExecuted={(block) => {
+            refreshWhenIndexed(queryClient, block, [
+              ["governance"],
+              ["events"],
+              ["votes"],
+            ]);
+            onConfirmed?.();
+          }}
+        >
           Your vote is queued in your Safe. It counts once the owners sign and
           execute it before voting ends.
         </SafeProposed>

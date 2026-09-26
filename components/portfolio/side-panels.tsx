@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   Clock,
   Info,
+  ShieldCheck,
   TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
@@ -167,11 +168,13 @@ export function PendingWithdrawals({
 export type Insight = {
   id: string;
   tone: "warning" | "info" | "positive";
-  kind: "missed" | "cut" | "inactive" | "withdraw" | "fees";
+  kind: "missed" | "cut" | "inactive" | "withdraw" | "fees" | "safe";
   orchestrator?: string;
   title: React.ReactNode;
   detail?: React.ReactNode;
   href?: string;
+  /** Opens outside the explorer, in a new tab. */
+  external?: boolean;
 };
 
 function OrchestratorName({ address }: { address: string }) {
@@ -191,6 +194,7 @@ const ICONS = {
   inactive: AlertTriangle,
   withdraw: Clock,
   fees: CircleDollarSign,
+  safe: ShieldCheck,
 };
 
 export function Insights({ items }: { items: Insight[] }) {
@@ -198,7 +202,8 @@ export function Insights({ items }: { items: Insight[] }) {
   return (
     <Card className="divide-y divide-(--hairline)">
       {items.map((i) => {
-        const Icon = i.tone === "info" ? Info : ICONS[i.kind];
+        const Icon =
+          i.tone === "info" && i.kind !== "safe" ? Info : ICONS[i.kind];
         const content = (
           <div className="flex items-start gap-3 px-4 py-3">
             <span
@@ -224,7 +229,17 @@ export function Insights({ items }: { items: Insight[] }) {
             )}
           </div>
         );
-        return i.href ? (
+        return i.href && i.external ? (
+          <a
+            key={i.id}
+            href={i.href}
+            target="_blank"
+            rel="noreferrer"
+            className="block transition-colors hover:bg-hover"
+          >
+            {content}
+          </a>
+        ) : i.href ? (
           <Link
             key={i.id}
             href={i.href}

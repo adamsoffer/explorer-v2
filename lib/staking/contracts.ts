@@ -8,7 +8,11 @@ import { CONTRACTS, L2_CHAIN } from "@/lib/config";
 
 /** Protocol contracts are resolved through the Controller registry. */
 export function useProtocolContract(
-  name: "BondingManager" | "LivepeerToken" | "RoundsManager"
+  name:
+    | "BondingManager"
+    | "LivepeerToken"
+    | "RoundsManager"
+    | "LivepeerGovernor"
 ) {
   const { data } = useReadContract({
     address: CONTRACTS.controller,

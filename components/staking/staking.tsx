@@ -12,10 +12,11 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { maxUint256 } from "viem";
+import { encodeFunctionData, getAddress, type Hex, maxUint256 } from "viem";
 import {
   useAccount,
   useReadContract,
+  useSendCalls,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -127,7 +128,9 @@ function useTx(
   isSafe: boolean | undefined
 ) {
   const { address } = useAccount();
-  const { writeContractAsync, isPending: signing, reset } = useWriteContract();
+  const { writeContractAsync, isPending: writing, reset } = useWriteContract();
+  const { sendCallsAsync, isPending: batching } = useSendCalls();
+  const signing = writing || batching;
   const [hash, setHash] = useState<`0x${string}` | undefined>();
   // A Safe hands back a proposal's hash: there's no receipt to wait for.
   const [proposed, setProposed] = useState(false);
@@ -141,13 +144,32 @@ function useTx(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess]);
 
+  // Never sign from an account other than the one this action is for.
+  const checkSigner = () => {
+    if (!signer || address?.toLowerCase() !== signer.toLowerCase()) {
+      throw new Error("Switch to the right account in your wallet first");
+    }
+  };
+
   return {
+    /**
+     * Several calls as one Safe proposal (EIP-5792), so the owners sign
+     * once. Only offered inside Safe{Wallet}, whose provider supports it.
+     */
+    sendBatch: async (calls: { to: `0x${string}`; data: Hex }[]) => {
+      checkSigner();
+      const { id } = await sendCallsAsync({
+        account: getAddress(signer!),
+        chainId: L2_CHAIN.id,
+        calls,
+      });
+      setHash(id as `0x${string}`);
+      setProposed(true);
+      return id;
+    },
     send: async (args: Parameters<typeof writeContractAsync>[0]) => {
       reset();
-      // Never sign from an account other than the one this action is for.
-      if (!signer || address?.toLowerCase() !== signer.toLowerCase()) {
-        throw new Error("Switch to the right account in your wallet first");
-      }
+      checkSigner();
       const h = await writeContractAsync({
         ...args,
         account: signer as `0x${string}`,
@@ -419,7 +441,7 @@ function StakingFlow({
   onDone: () => void;
   signer: string;
 }) {
-  const { address, chainId } = useAccount();
+  const { address, chainId, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const queryClient = useQueryClient();
   const bm = useProtocolContract("BondingManager");
@@ -519,6 +541,9 @@ function StakingFlow({
     amountWei > 0n &&
     ((allowanceWei as bigint | undefined) ?? 0n) < amountWei;
   const approvalFlow = needsApproval || approveTx.confirmed;
+  // Inside Safe{Wallet} the approval rides along with the delegation.
+  const safeApp = connector?.id === "safe";
+  const batchApproval = safeApp && needsApproval;
 
   switch (action.kind) {
     case "delegate": {
@@ -538,13 +563,26 @@ function StakingFlow({
         : "Delegated LPT earns inflationary rewards and a share of fees each round. You can undelegate any time; it takes " +
           unbondingTime +
           " to unlock.";
-      steps = approvalFlow
+      steps = batchApproval
+        ? [
+            {
+              key: "batch",
+              label: `Approve and ${
+                moving ? "switch" : "delegate"
+              } in one Safe transaction`,
+            },
+          ]
+        : approvalFlow
         ? [
             { key: "approve", label: "Approve LPT" },
             { key: "bond", label: moving ? "Switch" : "Delegate" },
           ]
         : [{ key: "bond", label: moving ? "Switch" : "Delegate" }];
-      cta = needsApproval
+      cta = batchApproval
+        ? moving
+          ? "Approve and switch"
+          : "Approve and delegate"
+        : needsApproval
         ? "Approve LPT"
         : moving
         ? amountWei > 0n
@@ -626,22 +664,13 @@ function StakingFlow({
         </>
       );
       run = async () => {
-        if (needsApproval) {
-          await approveTx.send({
-            address: token!,
-            abi: livepeerToken,
-            functionName: "approve",
-            args: [bm!, maxUint256],
-          });
-          return;
-        }
         const hints = bondHints(activeSet, {
           to,
           from: currentDelegate,
           amount: Number(amount || 0),
           moved: bonded,
         });
-        await tx.send({
+        const bond = {
           address: bm!,
           abi: bondingManager,
           functionName: "bondWithHint",
@@ -653,7 +682,32 @@ function StakingFlow({
             hints.newDelegate.prev,
             hints.newDelegate.next,
           ],
-        });
+        } as const;
+        if (batchApproval) {
+          // One proposal, and an approval for exactly this amount.
+          await tx.sendBatch([
+            {
+              to: token!,
+              data: encodeFunctionData({
+                abi: livepeerToken,
+                functionName: "approve",
+                args: [bm!, amountWei],
+              }),
+            },
+            { to: bm!, data: encodeFunctionData(bond) },
+          ]);
+          return;
+        }
+        if (needsApproval) {
+          await approveTx.send({
+            address: token!,
+            abi: livepeerToken,
+            functionName: "approve",
+            args: [bm!, maxUint256],
+          });
+          return;
+        }
+        await tx.send(bond);
       };
       break;
     }
@@ -851,7 +905,21 @@ function StakingFlow({
       </DialogHeader>
       <DialogBody>
         {proposed ? (
-          <SafeProposed safe={signer}>
+          <SafeProposed
+            safe={signer}
+            id={tx.hash ?? approveTx.hash}
+            onExecuted={(block) => {
+              refresh();
+              refreshWhenIndexed(queryClient, block, [
+                ["portfolio"],
+                ["account-events"],
+                ["orchestrators"],
+                ["orchestrator"],
+                ["events"],
+              ]);
+              toast.success(successTitle);
+            }}
+          >
             {approveTx.proposed && !tx.proposed
               ? "Once your Safe's owners sign and execute the approval, open this again to finish."
               : undefined}
@@ -879,6 +947,12 @@ function StakingFlow({
         ) : (
           <>
             <Steps steps={steps} current={currentStep} done={false} />
+            {batchApproval && (
+              <Notice>
+                Your Safe approves exactly this amount and delegates in one
+                transaction, so its owners only sign once.
+              </Notice>
+            )}
             {body}
             {error && (
               <p className="text-ui-caption text-destructive">{error}</p>

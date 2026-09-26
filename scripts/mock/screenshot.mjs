@@ -7,6 +7,13 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
+import {
+  decodeFunctionData,
+  encodeFunctionResult,
+  multicall3Abi,
+  toFunctionSelector,
+} from "viem";
+
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : fallback;
@@ -69,6 +76,29 @@ async function demoIds() {
   }
 }
 
+const CONTROLLER = "0xd8e8328501e9645d16cf49539efc04f734606ee4";
+const GET_CONTRACT = toFunctionSelector("getContract(bytes32)");
+const AGGREGATE3 = toFunctionSelector("aggregate3((address,bool,bytes)[])");
+let CONTRACTS = {};
+
+const GET_THRESHOLD = toFunctionSelector("getThreshold()");
+// The watched "Cold storage" wallet is a 2-of-3 Safe (see the mock's Safe
+// gateway fixtures).
+const SAFE = "0x6a7b132393431e2b83af171b4e6e5bf54c091421";
+
+/**
+ * The only reads served: Controller.getContract(name hash) → address, and
+ * the Safe's getThreshold. Everything else fails, as if the RPC were down.
+ */
+function controllerCall(to, data) {
+  const target = to?.toLowerCase();
+  if (target === SAFE && data?.startsWith(GET_THRESHOLD))
+    return "0x" + "2".padStart(64, "0");
+  if (target !== CONTROLLER || !data?.startsWith(GET_CONTRACT)) return null;
+  const addr = CONTRACTS["0x" + data.slice(10, 74)];
+  return addr ? "0x" + addr.slice(2).padStart(64, "0") : null;
+}
+
 const COINGECKO = {
   livepeer: { usd: 6.42, usd_24h_change: 1.8 },
   ethereum: { usd: 3120.5 },
@@ -77,6 +107,9 @@ const COINGECKO = {
 async function main() {
   const { chromium } = loadPlaywright();
   const { B, gateway, selfGateway } = await demoIds();
+  CONTRACTS = await fetch(`${MOCK}/contracts`)
+    .then((r) => r.json())
+    .catch(() => ({}));
 
   const pages = [
     { name: "portfolio", path: "/", watchlist: true },
@@ -174,8 +207,68 @@ async function main() {
     const blockedHosts = new Set();
     const baseHost = new URL(BASE).host;
     const mockHost = new URL(MOCK).host;
-    await context.route("**/*", (route) => {
+    await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
+      // Safe's Client Gateway, answered by the mock.
+      if (url.host === "safe-client.safe.global") {
+        const res = await fetch(`${MOCK}/safe${url.pathname}`);
+        return route.fulfill({
+          status: res.status,
+          contentType: "application/json",
+          headers: { "access-control-allow-origin": "*" },
+          body: await res.text(),
+        });
+      }
+      // Arbitrum RPC: only the Controller lookups the explorer needs to
+      // recognise Livepeer contracts; every other call fails as before.
+      if (url.host === "arb1.arbitrum.io") {
+        const body = JSON.parse(route.request().postData() ?? "null");
+        const answer = (r) => {
+          const c = r?.params?.[0];
+          if (r?.method === "eth_chainId")
+            return { jsonrpc: "2.0", id: r.id, result: "0xa4b1" };
+          if (r?.method === "eth_call" && c?.data) {
+            // Reads arrive batched through Multicall3's aggregate3.
+            if (c.data.startsWith(AGGREGATE3)) {
+              const { args } = decodeFunctionData({
+                abi: multicall3Abi,
+                data: c.data,
+              });
+              const results = args[0].map((x) => {
+                const out = controllerCall(x.target, x.callData);
+                return {
+                  success: Boolean(out),
+                  returnData: out ?? "0x",
+                };
+              });
+              return {
+                jsonrpc: "2.0",
+                id: r.id,
+                result: encodeFunctionResult({
+                  abi: multicall3Abi,
+                  functionName: "aggregate3",
+                  result: results,
+                }),
+              };
+            }
+            const out = controllerCall(c.to, c.data);
+            if (out) return { jsonrpc: "2.0", id: r.id, result: out };
+          }
+          return {
+            jsonrpc: "2.0",
+            id: r?.id ?? null,
+            error: { code: -32000, message: "mock rpc: not served" },
+          };
+        };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: { "access-control-allow-origin": "*" },
+          body: JSON.stringify(
+            Array.isArray(body) ? body.map(answer) : answer(body)
+          ),
+        });
+      }
       if (url.host === "api.coingecko.com") {
         return route.fulfill({
           status: 200,

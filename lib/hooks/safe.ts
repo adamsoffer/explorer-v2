@@ -1,8 +1,11 @@
 "use client";
 
-import { useAccount, useReadContract } from "wagmi";
+import { useQueries } from "@tanstack/react-query";
+import { useAccount, useReadContract, useReadContracts } from "wagmi";
 
 import { L2_CHAIN } from "@/lib/config";
+import { fetchSafeProposals, type SafeProposal } from "@/lib/safe/queue";
+import { useProtocolContract } from "@/lib/staking/contracts";
 
 const SAFE_ABI = [
   {
@@ -55,3 +58,41 @@ export const safeAppUrl = (safe: string) =>
   `https://app.safe.global/apps/open?safe=arb1:${safe}&appUrl=${encodeURIComponent(
     window.location.origin
   )}`;
+
+/**
+ * Livepeer actions queued in any of these addresses' Safes, waiting for
+ * signatures. Addresses that aren't Safes contribute nothing.
+ */
+export function useSafeProposals(addresses: string[]): SafeProposal[] {
+  const bondingManager = useProtocolContract("BondingManager");
+  const token = useProtocolContract("LivepeerToken");
+  const governor = useProtocolContract("LivepeerGovernor");
+  const contracts = { bondingManager, token, governor };
+  // Only Safes are looked up, so ordinary wallets never reach Safe's API.
+  const { data: thresholds } = useReadContracts({
+    contracts: addresses.map((address) => ({
+      address: address as `0x${string}`,
+      abi: SAFE_ABI,
+      functionName: "getThreshold" as const,
+      chainId: L2_CHAIN.id,
+    })),
+    allowFailure: true,
+    query: { enabled: addresses.length > 0, staleTime: Infinity },
+  });
+  const safes = addresses.filter(
+    (_, i) => thresholds?.[i]?.status === "success"
+  );
+  const results = useQueries({
+    queries: safes.map((address) => ({
+      queryKey: ["safe-proposals", address.toLowerCase(), contracts],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchSafeProposals(address, contracts, signal),
+      // Until the contracts resolve, calls to them can't be confirmed.
+      enabled: Boolean(bondingManager && token),
+      staleTime: 30_000,
+      refetchInterval: 60_000,
+      retry: false,
+    })),
+  });
+  return results.flatMap((r) => r.data ?? []);
+}
