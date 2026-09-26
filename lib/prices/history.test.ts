@@ -26,8 +26,9 @@ describe("price history", () => {
     ]);
     expect(priceAt(m, H + 20 * 60)).toBe(5);
     expect(priceAt(m, H + 40 * 60)).toBe(6);
-    // Nearest hour missing: a neighbouring one.
+    // Nearest hour missing: the closest one with trades, up to 3h away.
     expect(priceAt(m, H - 50 * 60)).toBe(5);
+    expect(priceAt(m, H + 4 * 3600)).toBe(6);
     expect(priceAt(m, H + 5 * 3600)).toBeNull();
   });
 

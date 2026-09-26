@@ -49,12 +49,20 @@ export function parseCandles(json: unknown): HourPrices | null {
 export const pageOf = (ts: number) =>
   Math.floor(Math.floor(ts / HOUR) / PAGE_HOURS);
 
-/** Price at `ts`: the nearest hour boundary, else the one either side. */
+/** Hours either side to look when a quiet hour had no trades. */
+const REACH = 3;
+
+/** Price at `ts`: the nearest hour with trades, up to 3 hours away. */
 export function priceAt(prices: HourPrices, ts: number): number | null {
   const nearest = Math.round(ts / HOUR) * HOUR;
-  for (const h of [nearest, nearest - HOUR, nearest + HOUR]) {
-    const p = prices.get(h);
-    if (p != null) return p;
+  const after = ts >= nearest;
+  for (let d = 0; d <= REACH; d++) {
+    // Closest side first.
+    const sides = d === 0 ? [0] : after ? [d, -d] : [-d, d];
+    for (const s of sides) {
+      const p = prices.get(nearest + s * HOUR);
+      if (p != null) return p;
+    }
   }
   return null;
 }
@@ -121,11 +129,11 @@ export async function pricesAt(
   times: number[]
 ): Promise<(number | null)[]> {
   if (!times.length) return [];
-  // Pages for each moment, plus a neighbour when it sits on a page edge.
+  // Pages for each moment and the hours around it, across a page edge.
   const pages = new Set<number>();
   for (const t of times) {
-    pages.add(pageOf(t - HOUR));
-    pages.add(pageOf(t + HOUR));
+    pages.add(pageOf(t - REACH * HOUR));
+    pages.add(pageOf(t + REACH * HOUR));
   }
   const now = pageOf(Date.now() / 1000);
   const wanted = [...pages].filter((p) => p <= now).sort((a, b) => a - b);
