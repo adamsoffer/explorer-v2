@@ -5,9 +5,13 @@ import { arbitrum, mainnet } from "viem/chains";
  * `shares`, per-round `DelegatorSnapshot`s, and cumulative reward/fee factors
  * on every pool (livepeer/subgraph#217). Point this at the production gateway
  * once those land there.
+ *
+ * Pinned to a fully synced version rather than `latest`, so a new deploy
+ * that's still syncing doesn't serve partial data. Move it forward once the
+ * next version has caught up.
  */
 export const STAGING_SUBGRAPH_URL =
-  "https://api.studio.thegraph.com/query/20534/livepeer-staging/version/latest";
+  "https://api.studio.thegraph.com/query/20534/livepeer-staging/version/v0.0.10";
 
 const SUBGRAPH_KEY = process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY;
 const SUBGRAPH_ID = process.env.NEXT_PUBLIC_SUBGRAPH_ID;
