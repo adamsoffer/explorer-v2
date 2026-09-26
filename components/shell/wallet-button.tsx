@@ -9,7 +9,6 @@ import {
   Eye,
   Layers,
   LogOut,
-  Plus,
   Wallet,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -94,12 +93,10 @@ function PortfolioSwitcher({
   accounts,
   compact,
   connected,
-  openConnectModal,
 }: {
   accounts: PortfolioAccount[];
   compact?: boolean;
   connected: boolean;
-  openConnectModal?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -208,15 +205,16 @@ function PortfolioSwitcher({
             </MenuItem>
           ))}
           <MenuSeparator />
+          {/* With nothing connected, adding a wallet is connecting one. */}
           <MenuItem onClick={addWallet.start}>
-            <Wallet /> Add wallet
+            <Wallet /> {connected ? "Add wallet" : "Connect wallet"}
           </MenuItem>
           <MenuItem onClick={() => setTracking(true)}>
             <Eye /> Track address
           </MenuItem>
-          <MenuSeparator />
-          {connected && activeWallet ? (
+          {connected && activeWallet && (
             <>
+              <MenuSeparator />
               <MenuItem
                 onClick={async () => {
                   try {
@@ -233,10 +231,6 @@ function PortfolioSwitcher({
                 <LogOut /> Disconnect
               </MenuItem>
             </>
-          ) : (
-            <MenuItem onClick={() => openConnectModal?.()}>
-              <Plus /> Connect wallet
-            </MenuItem>
           )}
         </MenuContent>
       </Menu>
@@ -291,7 +285,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
             accounts={accounts}
             compact={compact}
             connected={Boolean(account)}
-            openConnectModal={openConnectModal}
           />
         );
       }}
