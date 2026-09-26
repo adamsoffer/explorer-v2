@@ -11,7 +11,7 @@ import { arbitrum, mainnet } from "viem/chains";
  * next version has caught up.
  */
 export const STAGING_SUBGRAPH_URL =
-  "https://api.studio.thegraph.com/query/20534/livepeer-staging/version/v0.0.10";
+  "https://api.studio.thegraph.com/query/20534/livepeer-staging/v0.0.10";
 
 const SUBGRAPH_KEY = process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY;
 const SUBGRAPH_ID = process.env.NEXT_PUBLIC_SUBGRAPH_ID;
