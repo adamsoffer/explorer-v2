@@ -2,12 +2,15 @@ import type { SeriesPoint } from "./compute";
 
 /**
  * Earnings, one row per wallet per round with anything earned: LPT rewards
- * (and the commission part of them), ETH fees, and their USD value at that
- * day's price. For taxes and bookkeeping, so values are plain decimals,
- * dates are UTC, and a missing price is left blank rather than guessed.
+ * (and the commission part of them), ETH fees, and their USD value at the
+ * time. For taxes and bookkeeping, so values are plain decimals, times are
+ * UTC, and a missing price is left blank rather than guessed.
+ *
+ * A row's time is when its orchestrator called reward that round, the
+ * moment the LPT was minted. A round with fees but no reward call falls
+ * back to the round's start; fees accrue across the round as tickets are
+ * redeemed, so there's no single moment for them.
  */
-
-export type DailyPrices = Map<string, number>;
 
 export type EarningsAccount = {
   address: string;
@@ -15,27 +18,46 @@ export type EarningsAccount = {
   series: SeriesPoint[];
 };
 
-/** UTC calendar day, the key CoinGecko's daily prices are bucketed by. */
-export const utcDay = (ts: number) =>
-  new Date(ts * 1000).toISOString().slice(0, 10);
+export type EarningsRow = {
+  account: EarningsAccount;
+  point: SeriesPoint;
+  /** Unix seconds the row is priced at. */
+  ts: number;
+  basis: "Reward call" | "Round start";
+};
 
-/** CoinGecko `market_chart` prices ([ms, usd][]) keyed by UTC day. */
-export function dailyPrices(prices: [number, number][]): DailyPrices {
-  const out: DailyPrices = new Map();
-  // Daily granularity is stamped at 00:00 UTC; the last entry is "now" and
-  // shouldn't replace today's opening price.
-  for (const [ms, usd] of prices) {
-    const day = utcDay(ms / 1000);
-    if (!out.has(day)) out.set(day, usd);
-  }
-  return out;
+/** Rows with earnings, oldest first, timed by reward call where known. */
+export function earningsRows(
+  accounts: EarningsAccount[],
+  /** Reward-call time by `${orchestrator}:${round}`. */
+  rewardTimes: Map<string, number>
+): EarningsRow[] {
+  const rows = accounts.flatMap((account) =>
+    account.series
+      .filter((p) => p.rewards > 0 || p.fees > 0)
+      .map((point): EarningsRow => {
+        const called = point.from
+          ? rewardTimes.get(`${point.from.toLowerCase()}:${point.round}`)
+          : undefined;
+        return called != null
+          ? { account, point, ts: called, basis: "Reward call" }
+          : { account, point, ts: point.ts, basis: "Round start" };
+      })
+  );
+  return rows.sort(
+    (x, y) =>
+      x.point.round - y.point.round ||
+      x.account.address.localeCompare(y.account.address)
+  );
 }
 
 const HEADER = [
-  "Date (UTC)",
+  "Time (UTC)",
+  "Time basis",
   "Round",
   "Wallet",
   "Label",
+  "Orchestrator",
   "Rewards (LPT)",
   "Commission (LPT)",
   "Fees (ETH)",
@@ -59,24 +81,20 @@ function cell(value: string) {
 }
 
 export function earningsCsv(
-  accounts: EarningsAccount[],
-  prices: { lpt: DailyPrices; eth: DailyPrices }
+  rows: EarningsRow[],
+  /** USD prices aligned with `rows`; null or missing where unknown. */
+  prices: { lpt: (number | null)[]; eth: (number | null)[] }
 ) {
-  const rows = accounts.flatMap((a) =>
-    a.series.filter((p) => p.rewards > 0 || p.fees > 0).map((p) => ({ a, p }))
-  );
-  rows.sort(
-    (x, y) => x.p.round - y.p.round || x.a.address.localeCompare(y.a.address)
-  );
-  const lines = rows.map(({ a, p }) => {
-    const day = utcDay(p.ts);
-    const lpt = prices.lpt.get(day);
-    const eth = prices.eth.get(day);
+  const lines = rows.map(({ account, point: p, ts, basis }, i) => {
+    const lpt = prices.lpt[i] ?? null;
+    const eth = prices.eth[i] ?? null;
     return [
-      new Date(p.ts * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+      new Date(ts * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+      basis,
       String(p.round),
-      a.address,
-      a.label ?? "",
+      account.address,
+      account.label ?? "",
+      p.from ?? "",
       num(p.rewards, 10),
       num(p.commission, 10),
       num(p.fees, 10),

@@ -1383,3 +1383,49 @@ export async function fetchGovernance() {
     ),
   };
 }
+
+/* ── When each orchestrator called reward ────────────────────────────────── */
+
+const REWARD_TIMES = /* GraphQL */ `
+  query RewardTimes($delegates: [String!]!, $first: Int!, $lastId: String!) {
+    rewardEvents(
+      where: { delegate_in: $delegates, id_gt: $lastId }
+      first: $first
+      orderBy: id
+    ) {
+      id
+      timestamp
+      round {
+        id
+      }
+      delegate {
+        id
+      }
+    }
+  }
+`;
+
+/** Reward-call time (unix s) by `${orchestrator}:${round}`. */
+export async function fetchRewardTimes(
+  delegates: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!delegates.length) return out;
+  const rows = await paginate<{
+    id: string;
+    timestamp: number;
+    round: { id: string };
+    delegate: { id: string };
+  }>(
+    REWARD_TIMES,
+    "rewardEvents",
+    { delegates: delegates.map((d) => d.toLowerCase()) },
+    { max: 100_000 }
+  );
+  for (const r of rows)
+    out.set(
+      `${r.delegate.id.toLowerCase()}:${r.round.id}`,
+      Number(r.timestamp)
+    );
+  return out;
+}

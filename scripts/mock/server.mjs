@@ -856,6 +856,26 @@ const resolvers = {
     }).map((p) => shapePool(p, false)),
   }),
 
+  // One reward call per called pool, a few hours into its round.
+  RewardTimes: ({ delegates, first, lastId }) => ({
+    rewardEvents: page(
+      lower(delegates).flatMap((d) =>
+        (f.pools.get(d) ?? [])
+          .filter((p) => p.rewardTokens != null)
+          .map((p) => ({
+            id: `${p.id}-reward`,
+            timestamp:
+              f.roundByNum.get(p.round).startTimestamp +
+              3600 * (1 + (p.round % 7)) +
+              60 * (p.round % 53),
+            round: { id: String(p.round) },
+            delegate: { id: d },
+          }))
+      ),
+      { first, lastId }
+    ),
+  }),
+
   OrchestratorPools: ({ delegate, first, lastId }) => ({
     pools: page(f.pools.get(String(delegate).toLowerCase()) ?? [], {
       first,

@@ -80,6 +80,11 @@ export type SeriesPoint = {
   fees: number;
   /** % of network active stake */
   share: number | null;
+  /**
+   * Orchestrator this round's earnings came from (its reward call and
+   * fees). Per account only; merged series leave it out.
+   */
+  from?: string;
 };
 
 export type AccountResult = {
@@ -232,6 +237,7 @@ export function computeAccount({
       commission: toFloat(cutWei),
       fees: toFloat(feeWei),
       share: totalActiveStake > 0 ? (stake / totalActiveStake) * 100 : null,
+      from: prev?.delegate ?? (selfDelegated ? id : undefined),
     });
   }
 
@@ -273,7 +279,7 @@ export function mergeSeries(
         acc.commission += p.commission;
         acc.fees += p.fees;
       } else {
-        byRound.set(p.round, { ...p });
+        byRound.set(p.round, { ...p, from: undefined });
       }
     }
   }

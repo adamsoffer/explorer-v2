@@ -1,86 +1,45 @@
 import type { SeriesPoint } from "./compute";
-import { dailyPrices, earningsCsv } from "./csv";
+import { earningsCsv, earningsRows } from "./csv";
 
-const DAY1 = Date.UTC(2026, 8, 1) / 1000;
-const DAY2 = Date.UTC(2026, 8, 2) / 1000;
+const ROUND_START = Date.UTC(2026, 8, 1) / 1000;
+const CALLED = ROUND_START + 2 * 3600 + 17 * 60;
 
 const point = (p: Partial<SeriesPoint>): SeriesPoint => ({
-  round: 1,
-  ts: DAY1,
+  round: 10,
+  ts: ROUND_START,
   stake: 100,
   rewards: 0,
   commission: 0,
   fees: 0,
   share: null,
+  from: "0xorch",
   ...p,
 });
 
-describe("dailyPrices", () => {
-  it("keys by UTC day and keeps the day's first price", () => {
-    const m = dailyPrices([
-      [DAY1 * 1000, 5],
-      [DAY2 * 1000, 6],
-      [DAY2 * 1000 + 3_600_000, 7],
-    ]);
-    expect(m.get("2026-09-01")).toBe(5);
-    expect(m.get("2026-09-02")).toBe(6);
-  });
-});
-
-describe("earningsCsv", () => {
-  const prices = {
-    lpt: new Map([["2026-09-01", 5]]),
-    eth: new Map([["2026-09-01", 2000]]),
-  };
-
-  it("writes one row per round with earnings, valued at that day's price", () => {
-    const csv = earningsCsv(
-      [
-        {
-          address: "0xabc",
-          label: 'Cold, "vault"',
-          series: [
-            point({ round: 10, ts: DAY1 + 3600, rewards: 1.5, fees: 0.001 }),
-            point({ round: 11, ts: DAY2 }), // nothing earned: skipped
-          ],
-        },
-      ],
-      prices
-    );
-    const [header, row, ...rest] = csv.trim().split("\n");
-    expect(header.split(",")).toHaveLength(12);
-    expect(rest).toHaveLength(0);
-    expect(row).toBe(
-      '2026-09-01T01:00:00Z,10,0xabc,"Cold, ""vault""",1.5,0,0.001,5,2000,7.5,2,100'
-    );
-  });
-
-  it("neutralises labels a spreadsheet would run as formulas", () => {
-    const csv = earningsCsv(
+describe("earningsRows", () => {
+  it("times a row by its orchestrator's reward call when known", () => {
+    const [called, uncalled] = earningsRows(
       [
         {
           address: "0xa",
-          label: "=HYPERLINK(1)",
-          series: [point({ rewards: 1 })],
+          series: [
+            point({ round: 10, rewards: 1 }),
+            point({ round: 11, ts: ROUND_START + 86_400, fees: 0.1 }),
+            point({ round: 12 }), // nothing earned: no row
+          ],
         },
       ],
-      prices
+      new Map([["0xorch:10", CALLED]])
     );
-    expect(csv).toContain(",'=HYPERLINK(1),");
-  });
-
-  it("leaves USD blank when there's no price for the day", () => {
-    const csv = earningsCsv(
-      [{ address: "0xabc", series: [point({ ts: DAY2, rewards: 2 })] }],
-      prices
-    );
-    const cells = csv.trim().split("\n")[1].split(",");
-    expect(cells[7]).toBe("");
-    expect(cells[9]).toBe("");
+    expect(called).toMatchObject({ ts: CALLED, basis: "Reward call" });
+    expect(uncalled).toMatchObject({
+      ts: ROUND_START + 86_400,
+      basis: "Round start",
+    });
   });
 
   it("orders rows by round across wallets", () => {
-    const csv = earningsCsv(
+    const rows = earningsRows(
       [
         { address: "0xb", series: [point({ round: 2, rewards: 1 })] },
         {
@@ -91,13 +50,62 @@ describe("earningsCsv", () => {
           ],
         },
       ],
-      prices
+      new Map()
     );
-    const keys = csv
+    expect(rows.map((r) => `${r.point.round}:${r.account.address}`)).toEqual([
+      "1:0xa",
+      "2:0xa",
+      "2:0xb",
+    ]);
+  });
+});
+
+describe("earningsCsv", () => {
+  it("values each row at its own prices", () => {
+    const rows = earningsRows(
+      [
+        {
+          address: "0xabc",
+          label: 'Cold, "vault"',
+          series: [point({ rewards: 1.5, fees: 0.001 })],
+        },
+      ],
+      new Map([["0xorch:10", CALLED]])
+    );
+    const [header, row] = earningsCsv(rows, { lpt: [5], eth: [2000] })
       .trim()
-      .split("\n")
-      .slice(1)
-      .map((l) => l.split(",").slice(1, 3).join(":"));
-    expect(keys).toEqual(["1:0xa", "2:0xa", "2:0xb"]);
+      .split("\n");
+    expect(header.split(",")).toHaveLength(14);
+    expect(row).toBe(
+      '2026-09-01T02:17:00Z,Reward call,10,0xabc,"Cold, ""vault""",0xorch,1.5,0,0.001,5,2000,7.5,2,100'
+    );
+  });
+
+  it("leaves USD blank where a price is unknown", () => {
+    const rows = earningsRows(
+      [{ address: "0xa", series: [point({ rewards: 2 })] }],
+      new Map()
+    );
+    const cells = earningsCsv(rows, { lpt: [null], eth: [] })
+      .trim()
+      .split("\n")[1]
+      .split(",");
+    expect(cells.slice(9, 13)).toEqual(["", "", "", ""]);
+  });
+
+  it("neutralises labels a spreadsheet would run as formulas", () => {
+    const rows = earningsRows(
+      [
+        {
+          address: "0xa",
+          label: "=HYPERLINK(1)",
+          series: [point({ rewards: 1 })],
+        },
+      ],
+      new Map()
+    );
+    expect(earningsCsv(rows, { lpt: [], eth: [] })).toContain(
+      ",'=HYPERLINK(1),"
+    );
   });
 });

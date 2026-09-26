@@ -7,24 +7,30 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
-  type DailyPrices,
-  dailyPrices,
   type EarningsAccount,
   earningsCsv,
+  earningsRows,
 } from "@/lib/portfolio/csv";
+import { fetchRewardTimes } from "@/lib/subgraph/network";
 
-/**
- * Daily USD closes from CoinGecko. The public API serves a year of daily
- * history; older rounds are exported without a USD value.
- */
-async function history(coin: "livepeer" | "ethereum"): Promise<DailyPrices> {
-  const res = await fetch(
-    `https://api.coingecko.com/api/v3/coins/${coin}/market_chart?vs_currency=usd&days=365&interval=daily`,
-    { signal: AbortSignal.timeout(15_000) }
-  );
-  if (!res.ok) throw new Error(`CoinGecko returned ${res.status}`);
-  const json = (await res.json()) as { prices?: [number, number][] };
-  return dailyPrices(json.prices ?? []);
+type Prices = { lpt: (number | null)[]; eth: (number | null)[] };
+
+/** USD prices at each moment, from the explorer's price-history route. */
+async function pricesAt(times: number[]): Promise<Prices> {
+  const unique = [...new Set(times)];
+  const res = await fetch("/api/prices/history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ times: unique }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(`Price history returned ${res.status}`);
+  const json = (await res.json()) as Prices;
+  const index = new Map(unique.map((t, i) => [t, i]));
+  return {
+    lpt: times.map((t) => json.lpt[index.get(t)!] ?? null),
+    eth: times.map((t) => json.eth[index.get(t)!] ?? null),
+  };
 }
 
 function download(name: string, text: string) {
@@ -51,18 +57,27 @@ export function ExportEarnings({
 
   const run = async () => {
     setBusy(true);
-    let lpt: DailyPrices = new Map();
-    let eth: DailyPrices = new Map();
+    // When each orchestrator called reward, to price rows at that moment.
+    const orchestrators = [
+      ...new Set(
+        accounts.flatMap((a) =>
+          a.series.flatMap((p) => (p.from ? [p.from.toLowerCase()] : []))
+        )
+      ),
+    ];
+    const rewardTimes = await fetchRewardTimes(orchestrators).catch(
+      () => new Map<string, number>()
+    );
+    const rows = earningsRows(accounts, rewardTimes);
+    let prices: Prices = { lpt: [], eth: [] };
     let priced = true;
     try {
-      [lpt, eth] = await Promise.all([
-        history("livepeer"),
-        history("ethereum"),
-      ]);
+      prices = await pricesAt(rows.map((r) => r.ts));
     } catch {
       priced = false;
     }
-    const csv = earningsCsv(accounts, { lpt, eth });
+    const missing = prices.lpt.filter((p) => p == null).length;
+    const csv = earningsCsv(rows, prices);
     const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -78,10 +93,14 @@ export function ExportEarnings({
       toast.warning("Exported without USD values", {
         description: "Price history couldn't be loaded. Try again later.",
       });
+    else if (missing > 0)
+      toast.warning(`${missing} rows have no USD value`, {
+        description: "No price was recorded near those times.",
+      });
   };
 
   return (
-    <Tooltip content="Download rewards and fees, round by round, with USD values at the time (past 12 months)">
+    <Tooltip content="Download rewards and fees, round by round, with USD values at the time of each reward call">
       <Button
         variant="ghost"
         size="xs"
