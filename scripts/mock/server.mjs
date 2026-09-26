@@ -492,6 +492,7 @@ export const CONTRACTS = {
   BondingManager: "0x35bcf3c30594191d53231e4ff333e8a770453e40",
   LivepeerToken: "0x289ba1701c2f088cf0faf8b3705246331cb8a839",
   LivepeerGovernor: "0xcfe4e2879b786c3aa075813f0e364bb5accb6aa0",
+  Treasury: "0xf82c1ff415f1fcf582554fdba790e27019c8e8c4",
 };
 const MULTI_SEND = "0x40a2accbd92bca938b02010e17a5b8929b49130d";
 const fn = (name, inputs) => ({
@@ -1213,7 +1214,11 @@ const server = http.createServer((req, res) => {
       : send(res, 404, { error: "not found" });
   }
   if (req.method === "GET" && url.pathname === "/contracts")
-    return send(res, 200, CONTRACT_BY_HASH);
+    return send(
+      res,
+      200,
+      url.searchParams.has("names") ? CONTRACTS : CONTRACT_BY_HASH
+    );
   if (req.method === "GET" && url.pathname === "/health")
     return send(res, 200, {
       ok: true,

@@ -1,6 +1,7 @@
 "use client";
 
-import { Landmark, Vote } from "lucide-react";
+import { Landmark, Plus, Vote } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -27,6 +28,7 @@ import {
   SectionHeader,
 } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
+import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/misc";
 import { useGovernance, useProtocol } from "@/lib/hooks/queries";
 
@@ -54,6 +56,23 @@ export default function GovernancePage() {
       <PageHeader
         title="Governance"
         description="Stakeholders steer the protocol: treasury proposals fund work from the on-chain treasury, and LIP polls signal support for protocol upgrades."
+        actions={
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              render={<Link href="/governance/polls/new" />}
+            >
+              <Plus /> New poll
+            </Button>
+            <Button
+              size="sm"
+              render={<Link href="/governance/proposals/new" />}
+            >
+              <Plus /> New proposal
+            </Button>
+          </>
+        }
       />
       <Suspense fallback={<ListSkeleton />}>
         <GovernanceLists />

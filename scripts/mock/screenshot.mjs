@@ -80,8 +80,35 @@ const CONTROLLER = "0xd8e8328501e9645d16cf49539efc04f734606ee4";
 const GET_CONTRACT = toFunctionSelector("getContract(bytes32)");
 const AGGREGATE3 = toFunctionSelector("aggregate3((address,bool,bytes)[])");
 let CONTRACTS = {};
+/** Contract name → address (lowercase), for reads beyond the registry. */
+let NAMED = {};
 
 const GET_THRESHOLD = toFunctionSelector("getThreshold()");
+const BALANCE_OF = toFunctionSelector("balanceOf(address)");
+const PROPOSAL_THRESHOLD = toFunctionSelector("proposalThreshold()");
+const POLL_CREATION_COST = toFunctionSelector("POLL_CREATION_COST()");
+const uint = (n) => "0x" + n.toString(16).padStart(64, "0");
+const LPT = 10n ** 18n;
+const POLL_CREATOR = "0x8bb50806d60c492c0004dad5d9627daa2d9732e6";
+
+// Pollable LIPs, as /api/governance/lips would read them from GitHub.
+const LIPS = {
+  commit: "4f3c2a1e9b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a",
+  lips: [
+    {
+      lip: "103",
+      title: "Treasury contribution percentage cap",
+      created: "2026-08-14",
+      url: "https://github.com/livepeer/LIPS/blob/master/LIPs/LIP-103.md",
+    },
+    {
+      lip: "102",
+      title: "Reduce the unbonding period to 5 rounds",
+      created: "2026-07-30",
+      url: "https://github.com/livepeer/LIPS/blob/master/LIPs/LIP-102.md",
+    },
+  ],
+};
 // The watched "Cold storage" wallet is a 2-of-3 Safe (see the mock's Safe
 // gateway fixtures).
 const SAFE = "0x6a7b132393431e2b83af171b4e6e5bf54c091421";
@@ -94,6 +121,16 @@ function controllerCall(to, data) {
   const target = to?.toLowerCase();
   if (target === SAFE && data?.startsWith(GET_THRESHOLD))
     return "0x" + "2".padStart(64, "0");
+  if (target === POLL_CREATOR && data?.startsWith(POLL_CREATION_COST))
+    return uint(100n * LPT);
+  if (
+    target === NAMED.LivepeerToken &&
+    data?.startsWith(BALANCE_OF) &&
+    data.slice(34).toLowerCase() === NAMED.Treasury?.slice(2)
+  )
+    return uint(1_284_512n * LPT);
+  if (target === NAMED.LivepeerGovernor && data?.startsWith(PROPOSAL_THRESHOLD))
+    return uint(100n * LPT);
   if (target !== CONTROLLER || !data?.startsWith(GET_CONTRACT)) return null;
   const addr = CONTRACTS["0x" + data.slice(10, 74)];
   return addr ? "0x" + addr.slice(2).padStart(64, "0") : null;
@@ -108,6 +145,9 @@ async function main() {
   const { chromium } = loadPlaywright();
   const { B, gateway, selfGateway } = await demoIds();
   CONTRACTS = await fetch(`${MOCK}/contracts`)
+    .then((r) => r.json())
+    .catch(() => ({}));
+  NAMED = await fetch(`${MOCK}/contracts?names=1`)
     .then((r) => r.json())
     .catch(() => ({}));
 
@@ -126,6 +166,12 @@ async function main() {
     },
     { name: "network", path: "/network", watchlist: true },
     { name: "governance", path: "/governance", watchlist: true },
+    { name: "poll-new", path: "/governance/polls/new", watchlist: true },
+    {
+      name: "proposal-new",
+      path: "/governance/proposals/new",
+      watchlist: true,
+    },
     { name: "activity", path: "/activity", watchlist: true },
   ];
   const variants = [
@@ -267,6 +313,13 @@ async function main() {
           body: JSON.stringify(
             Array.isArray(body) ? body.map(answer) : answer(body)
           ),
+        });
+      }
+      if (url.host === baseHost && url.pathname === "/api/governance/lips") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(LIPS),
         });
       }
       if (url.host === "api.coingecko.com") {
