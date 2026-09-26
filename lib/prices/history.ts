@@ -126,7 +126,9 @@ function readPage(coin: Coin, page: number) {
 /** USD price of `coin` at each of `times` (unix s); null where unknown. */
 export async function pricesAt(
   coin: Coin,
-  times: number[]
+  times: number[],
+  /** Stop reading new pages after this (ms); the rest stay null. */
+  deadline = Infinity
 ): Promise<(number | null)[]> {
   if (!times.length) return [];
   // Pages for each moment and the hours around it, across a page edge.
@@ -140,7 +142,10 @@ export async function pricesAt(
 
   const prices: HourPrices = new Map();
   const errors: unknown[] = [];
+  let read = 0;
   for (let i = 0; i < wanted.length; i += CONCURRENCY) {
+    if (Date.now() > deadline) break;
+    read += Math.min(CONCURRENCY, wanted.length - i);
     const chunk = await Promise.all(
       wanted.slice(i, i + CONCURRENCY).map((p) =>
         // A page that still fails leaves its moments unpriced rather than
@@ -153,7 +158,7 @@ export async function pricesAt(
     );
     for (const pairs of chunk) for (const [h, usd] of pairs) prices.set(h, usd);
   }
-  if (errors.length === wanted.length) throw errors[0];
+  if (read > 0 && errors.length === read) throw errors[0];
   if (errors.length)
     console.warn(
       `Price history: ${errors.length} ${coin} pages failed`,

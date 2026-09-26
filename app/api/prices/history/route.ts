@@ -1,7 +1,9 @@
 import { pricesAt } from "@/lib/prices/history";
 
-// A first, uncached export reads years of pages at a paced rate.
-export const maxDuration = 120;
+// Vercel Hobby's ceiling. A first, uncached export may need longer, so the
+// lookup stops at a budget below it and the client asks again for the rest.
+export const maxDuration = 60;
+const BUDGET_MS = 45_000;
 
 const MAX_TIMES = 20_000;
 const MAX_GET_TIMES = 50;
@@ -53,10 +55,11 @@ async function respond(times: unknown, max: number) {
       { status: 400 }
     );
 
+  const deadline = Date.now() + BUDGET_MS;
   try {
     const [lpt, eth] = await Promise.all([
-      pricesAt("LPT", times),
-      pricesAt("ETH", times),
+      pricesAt("LPT", times, deadline),
+      pricesAt("ETH", times, deadline),
     ]);
     return Response.json({ times, lpt, eth });
   } catch (e) {
