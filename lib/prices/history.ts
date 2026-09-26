@@ -69,6 +69,16 @@ export function priceAt(prices: HourPrices, ts: number): number | null {
   return null;
 }
 
+/** The provider's own error text, from either API's error shape. */
+function upstreamMessage(json: unknown): string | null {
+  const j = json as {
+    Message?: unknown;
+    Err?: { message?: unknown };
+  } | null;
+  const msg = j?.Err?.message ?? j?.Message;
+  return typeof msg === "string" && msg ? msg.slice(0, 300) : null;
+}
+
 type Source = {
   name: string;
   url: (coin: Coin, toTs: number) => string;
@@ -105,9 +115,14 @@ async function fetchPage(
     // Cached below in compact form; the raw rows are too big to keep.
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${source.name} returned ${res.status}`);
-  const prices = source.parse(await res.json());
-  if (!prices) throw new Error(`${source.name} sent an unexpected response`);
+  const json = await res.json().catch(() => null);
+  const prices = res.ok ? source.parse(json) : null;
+  if (!prices)
+    throw new Error(
+      `${source.name} ${res.status}: ${
+        upstreamMessage(json) ?? "unexpected response"
+      }`
+    );
   return [...prices];
 }
 

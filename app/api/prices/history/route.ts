@@ -47,8 +47,12 @@ export async function POST(req: Request) {
     return Response.json({ lpt, eth });
   } catch (e) {
     console.error("Price history:", e);
+    // Provider errors only (status and message); they never carry the key.
     return Response.json(
-      { error: "Price history is unavailable right now." },
+      {
+        error: "Price history is unavailable right now.",
+        detail: e instanceof Error ? e.message : String(e),
+      },
       { status: 502 }
     );
   }
