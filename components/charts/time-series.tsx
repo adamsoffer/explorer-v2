@@ -213,20 +213,30 @@ export function TimeSeriesChart({
   );
 }
 
-/** Tiny trend line for table cells and tiles. No axes, no interaction. */
+/**
+ * Tiny trend line for table cells and tiles. No axes, no interaction.
+ * `fluid` stretches it to its container's width.
+ */
 export function Sparkline({
   values,
   color = "var(--muted-foreground)",
   width = 72,
   height = 22,
+  fluid = false,
 }: {
   values: number[];
   color?: string;
   width?: number;
   height?: number;
+  fluid?: boolean;
 }) {
   if (values.length < 2)
-    return <span style={{ width, height }} className="inline-block" />;
+    return (
+      <span
+        style={{ width: fluid ? "100%" : width, height }}
+        className="inline-block"
+      />
+    );
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
@@ -239,10 +249,12 @@ export function Sparkline({
     .join(" ");
   return (
     <svg
-      width={width}
+      width={fluid ? "100%" : width}
       height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio={fluid ? "none" : undefined}
       aria-hidden="true"
-      className="overflow-visible"
+      className="block overflow-visible"
     >
       <polyline
         points={pts}
@@ -251,6 +263,7 @@ export function Sparkline({
         strokeWidth={1.5}
         strokeLinejoin="round"
         strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );

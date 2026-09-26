@@ -122,11 +122,14 @@ export function Kpi({
   label,
   value,
   sub,
+  trend,
   className,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
   sub?: React.ReactNode;
+  /** A small chart pinned to the bottom of the tile. */
+  trend?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -145,6 +148,7 @@ export function Kpi({
       {sub && (
         <div className="text-ui-caption text-muted-foreground">{sub}</div>
       )}
+      {trend && <div className="mt-auto pt-3">{trend}</div>}
     </div>
   );
 }

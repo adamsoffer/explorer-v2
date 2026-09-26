@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { ActivityList } from "@/components/activity-list";
-import { type Point, TimeSeriesChart } from "@/components/charts/time-series";
+import {
+  type Point,
+  Sparkline,
+  TimeSeriesChart,
+} from "@/components/charts/time-series";
 import { LiveStatus } from "@/components/live-status";
 import {
   Card,
@@ -27,7 +31,6 @@ import {
   formatLPT,
   formatNumber,
   formatPercent,
-  formatUSD,
 } from "@/lib/format";
 import { useLiveFeed } from "@/lib/hooks/live-feed";
 import {
@@ -122,6 +125,8 @@ function RoundCardSkeleton() {
 /* ── KPIs ────────────────────────────────────────────────────────────────── */
 
 function NetworkKpis({ protocol }: { protocol?: Protocol }) {
+  // Shares the history chart's cache: no extra request.
+  const { data: days } = useDays(365);
   if (!protocol) {
     return (
       <KpiStrip cols={2} className="h-full">
@@ -135,6 +140,18 @@ function NetworkKpis({ protocol }: { protocol?: Protocol }) {
       </KpiStrip>
     );
   }
+  const recent = days?.slice(-30) ?? [];
+  const trend = (values: number[]) =>
+    values.length > 1 ? (
+      <Sparkline
+        values={values}
+        height={28}
+        color="var(--subtle-foreground)"
+        fluid
+      />
+    ) : null;
+  const fees30 = recent.reduce((s, d) => s + d.volumeETH, 0);
+
   return (
     <KpiStrip cols={2} className="h-full">
       <Kpi
@@ -145,6 +162,7 @@ function NetworkKpis({ protocol }: { protocol?: Protocol }) {
         })} staked · target ${formatPercent(protocol.targetBondingRate, {
           decimals: 0,
         })}`}
+        trend={trend(recent.map((d) => d.participationRate))}
       />
       <Kpi
         label="Inflation per round"
@@ -156,20 +174,19 @@ function NetworkKpis({ protocol }: { protocol?: Protocol }) {
             ? "Rising: participation is below target"
             : "Falling: participation is above target"
         }
+        trend={trend(recent.map((d) => d.inflation))}
       />
       <Kpi
-        label="Fee volume, all time"
-        value={formatETH(protocol.totalVolumeETH)}
-        sub={
-          protocol.totalVolumeUSD > 0
-            ? formatUSD(protocol.totalVolumeUSD, { compact: true })
-            : "—"
-        }
+        label="Fees · 30 days"
+        value={days ? formatETH(fees30) : <Skeleton className="h-6 w-28" />}
+        sub={`${formatETH(protocol.totalVolumeETH)} all time`}
+        trend={trend(recent.map((d) => d.volumeETH))}
       />
       <Kpi
         label="Delegators"
         value={protocol.delegatorsCount.toLocaleString()}
         sub={`${protocol.activeTranscoderCount.toLocaleString()} active orchestrators`}
+        trend={trend(recent.map((d) => d.delegatorsCount))}
       />
     </KpiStrip>
   );
@@ -474,7 +491,6 @@ export default function NetworkPage() {
         <ErrorNotice error={error} onRetry={() => refetch()} />
       ) : (
         <Section>
-          <SectionHeader title="Round" />
           <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             {protocol ? (
               <RoundCard protocol={protocol} />
