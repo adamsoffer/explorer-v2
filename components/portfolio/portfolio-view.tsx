@@ -45,6 +45,7 @@ import {
 } from "@/lib/portfolio/compute";
 import type { Orchestrator } from "@/lib/subgraph/network";
 
+import { ExportEarnings } from "./export-earnings";
 import { PortfolioHero } from "./hero";
 import { DelegationCard, type Position, Positions } from "./positions";
 import { safeInsights } from "./safe-insights";
@@ -363,6 +364,26 @@ export function PortfolioView({
           perRound={perRound}
           nowSec={nowSec}
           loading={loading}
+          actions={
+            data && (
+              <ExportEarnings
+                name={
+                  scope === "all"
+                    ? showScope
+                      ? "portfolio"
+                      : accounts[0]?.label ?? accounts[0]?.address ?? ""
+                    : accounts.find((a) => a.address === scope)?.label ?? scope
+                }
+                accounts={data.accounts
+                  .filter((a) => scoped.includes(a.id))
+                  .map((a) => ({
+                    address: a.id,
+                    label: accounts.find((x) => x.address === a.id)?.label,
+                    series: a.series,
+                  }))}
+              />
+            )
+          }
         />
       </div>
 

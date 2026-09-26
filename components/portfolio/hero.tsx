@@ -45,6 +45,7 @@ export function PortfolioHero({
   perRound,
   nowSec,
   loading,
+  actions,
 }: {
   series: SeriesPoint[];
   stake: number;
@@ -52,6 +53,8 @@ export function PortfolioHero({
   perRound: number;
   nowSec: number;
   loading?: boolean;
+  /** Beside the time range, e.g. an export. */
+  actions?: React.ReactNode;
 }) {
   const [period, setPeriod] = useState<Period>("3m");
   const [metric, setMetric] = useState<Metric>("stake");
@@ -185,13 +188,16 @@ export function PortfolioHero({
             onChange={setMetric}
             options={METRICS}
           />
-          <Segmented
-            label="Time range"
-            size="xs"
-            value={period}
-            onChange={setPeriod}
-            options={PERIODS}
-          />
+          <div className="flex items-center gap-1.5">
+            {actions}
+            <Segmented
+              label="Time range"
+              size="xs"
+              value={period}
+              onChange={setPeriod}
+              options={PERIODS}
+            />
+          </div>
         </div>
       </div>
 
