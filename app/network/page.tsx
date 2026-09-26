@@ -344,7 +344,6 @@ function HistorySection() {
 function RewardCalls({ round }: { round: number }) {
   const { data } = useRewardProgress(round);
   const pct = data && data.total > 0 ? (data.called / data.total) * 100 : 0;
-  const left = data ? data.total - data.called : 0;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline px-5 py-3.5 sm:px-6">
       <span className="text-ui-caption text-muted-foreground">
@@ -375,7 +374,6 @@ function RewardCalls({ round }: { round: number }) {
       </div>
       {data && (
         <span className="basis-full text-ui-caption text-muted-foreground sm:basis-auto">
-          {left > 0 ? `${left} to go · ` : "All called · "}
           <span className="font-mono text-foreground tabular-nums">
             {formatLPT(data.minted, { compact: true })}
           </span>{" "}
