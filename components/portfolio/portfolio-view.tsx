@@ -56,6 +56,7 @@ import {
   PendingWithdrawals,
   Projections,
 } from "./side-panels";
+import { useVoteInsights } from "./vote-insights";
 
 /** One account's delegation, including an account with nothing delegated. */
 function SingleDelegation({
@@ -203,10 +204,22 @@ export function PortfolioView({
   );
 
   const proposals = useSafeProposals(scoped);
+  const holdings = useMemo(
+    () =>
+      (view?.positions ?? []).map((p) => ({
+        account: p.account.address,
+        delegate: p.delegate,
+        stake: p.stake,
+      })),
+    [view]
+  );
+  const votes = useVoteInsights(holdings);
   const insights = useMemo<Insight[]>(() => {
     if (!view || !data) return [];
     // Actions waiting on a Safe's signers come first: they're blocked on you.
     const out: Insight[] = safeInsights(proposals, accounts);
+    // Then open votes, soonest to close first.
+    out.push(...votes);
     for (const d of delegates) {
       const o = orchestrators.get(d);
       const pos = view.positions.find((p) => p.delegate === d);
@@ -314,7 +327,16 @@ export function PortfolioView({
       });
     }
     return out;
-  }, [view, data, delegates, orchestrators, updates, proposals, accounts]);
+  }, [
+    view,
+    data,
+    delegates,
+    orchestrators,
+    updates,
+    proposals,
+    accounts,
+    votes,
+  ]);
 
   if (error) return <ErrorNotice error={error} onRetry={() => refetch()} />;
 
@@ -447,7 +469,7 @@ export function PortfolioView({
         <Section className="mt-10">
           <SectionHeader
             title="Needs attention"
-            description="From the last 30 rounds of your orchestrators' activity"
+            description="Open votes, pending Safe actions, and your orchestrators' last 30 rounds"
           />
           <Insights items={insights} />
         </Section>

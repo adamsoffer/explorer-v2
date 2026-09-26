@@ -145,7 +145,7 @@ const IPFS_GATEWAYS = [
   "https://ipfs.io/ipfs/",
 ];
 
-async function fetchPollDocument(hash: string): Promise<PollDocument> {
+export async function fetchPollDocument(hash: string): Promise<PollDocument> {
   let lastError: unknown = null;
   for (const gateway of IPFS_GATEWAYS) {
     try {
