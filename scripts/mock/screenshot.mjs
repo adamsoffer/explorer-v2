@@ -111,7 +111,14 @@ async function main() {
       viewport: { width: 390, height: 844 },
       theme: "dark",
       mobile: true,
-      pages: ["portfolio", "orchestrators", "gateways", "gateway", "activity"],
+      pages: [
+        "portfolio",
+        "orchestrators",
+        "gateways",
+        "gateway",
+        "activity",
+        "network",
+      ],
     },
   ];
 

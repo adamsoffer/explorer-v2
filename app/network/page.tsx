@@ -50,61 +50,69 @@ function RoundCard({ protocol }: { protocol: Protocol }) {
   });
 
   return (
-    <Card className="flex h-full items-center gap-5 p-5 sm:p-6">
-      <Ring
-        progress={s.progress}
-        size={112}
-        stroke={9}
-        tone={s.overdue || !s.initialized ? "warning" : "positive"}
-      >
-        <span className="text-[22px] leading-7 font-medium tracking-[-0.01em]">
-          {Math.floor(s.progress * 100)}%
-        </span>
-        <span className="text-[11px] text-muted-foreground">elapsed</span>
-      </Ring>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="text-ui-caption text-muted-foreground">
-          Current round
-        </div>
-        <div className="text-[22px] leading-7 font-medium tracking-[-0.01em]">
-          {protocol.currentRound.toLocaleString()}
-        </div>
-        <div className="font-mono text-ui-body text-foreground tabular-nums">
-          {s.overdue
-            ? "Ready to initialize"
-            : `${formatDuration(s.remaining)} left`}
-        </div>
-        <div className="text-ui-caption text-muted-foreground">
-          {s.overdue
-            ? `Round ${next.toLocaleString()} can be initialized now`
-            : `Round ${next.toLocaleString()} begins around ${endsAt}`}
-        </div>
-        <div className="text-ui-caption text-muted-foreground">
-          <span className="font-mono tabular-nums">
-            ~{s.blocksElapsed.toLocaleString()} /{" "}
-            {protocol.roundLength.toLocaleString()}
-          </span>{" "}
-          L1 blocks
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-ui-caption text-muted-foreground">
-          <StatusDot tone={s.initialized ? "positive" : "warning"} />
-          {s.initialized ? "Initialized" : "Awaiting initialization"}
+    <Card className="flex h-full flex-col">
+      <div className="flex flex-1 items-center gap-5 p-5 sm:p-6">
+        <Ring
+          progress={s.progress}
+          size={112}
+          stroke={9}
+          tone={s.overdue || !s.initialized ? "warning" : "positive"}
+        >
+          <span className="text-[22px] leading-7 font-medium tracking-[-0.01em]">
+            {Math.floor(s.progress * 100)}%
+          </span>
+          <span className="text-[11px] text-muted-foreground">elapsed</span>
+        </Ring>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="text-ui-caption text-muted-foreground">
+            Current round
+          </div>
+          <div className="text-[22px] leading-7 font-medium tracking-[-0.01em]">
+            {protocol.currentRound.toLocaleString()}
+          </div>
+          <div className="font-mono text-ui-body text-foreground tabular-nums">
+            {s.overdue
+              ? "Ready to initialize"
+              : `${formatDuration(s.remaining)} left`}
+          </div>
+          <div className="text-ui-caption text-muted-foreground">
+            {s.overdue
+              ? `Round ${next.toLocaleString()} can be initialized now`
+              : `Round ${next.toLocaleString()} begins around ${endsAt}`}
+          </div>
+          <div className="text-ui-caption text-muted-foreground">
+            <span className="font-mono tabular-nums">
+              ~{s.blocksElapsed.toLocaleString()} /{" "}
+              {protocol.roundLength.toLocaleString()}
+            </span>{" "}
+            L1 blocks
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-ui-caption text-muted-foreground">
+            <StatusDot tone={s.initialized ? "positive" : "warning"} />
+            {s.initialized ? "Initialized" : "Awaiting initialization"}
+          </div>
         </div>
       </div>
+      <RewardCalls round={protocol.currentRound} />
     </Card>
   );
 }
 
 function RoundCardSkeleton() {
   return (
-    <Card className="flex h-full items-center gap-5 p-5 sm:p-6">
-      <Skeleton className="size-28 shrink-0 rounded-full" />
-      <div className="flex flex-1 flex-col gap-2">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-6 w-20" />
-        <Skeleton className="h-4 w-28" />
-        <Skeleton className="h-3 w-44" />
-        <Skeleton className="h-3 w-32" />
+    <Card className="flex h-full flex-col">
+      <div className="flex flex-1 items-center gap-5 p-5 sm:p-6">
+        <Skeleton className="size-28 shrink-0 rounded-full" />
+        <div className="flex flex-1 flex-col gap-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-6 w-20" />
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-3 w-44" />
+          <Skeleton className="h-3 w-32" />
+        </div>
+      </div>
+      <div className="border-t border-hairline px-5 py-3.5 sm:px-6">
+        <Skeleton className="h-3.5 w-full" />
       </div>
     </Card>
   );
@@ -332,63 +340,49 @@ function HistorySection() {
  * It fills through every round and resets at the next, so the page always
  * shows the protocol moving; a laggard late in a round is worth knowing.
  */
-function RewardCalls({ protocol }: { protocol?: Protocol }) {
-  const round = protocol?.currentRound;
+/** Footer of the round card: who has called reward so far this round. */
+function RewardCalls({ round }: { round: number }) {
   const { data } = useRewardProgress(round);
   const pct = data && data.total > 0 ? (data.called / data.total) * 100 : 0;
+  const left = data ? data.total - data.called : 0;
   return (
-    <Card className="flex flex-col gap-3 p-5 sm:p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div className="flex items-baseline gap-2">
-          <span className="text-ui-caption text-muted-foreground">
-            Reward calls this round
-          </span>
-          {round != null && (
-            <span className="font-mono text-[11px] text-subtle-foreground tabular-nums">
-              {round.toLocaleString()}
-            </span>
-          )}
-        </div>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline px-5 py-3.5 sm:px-6">
+      <span className="text-ui-caption text-muted-foreground">
+        Reward calls
+      </span>
+      <span className="font-mono text-[13px] tabular-nums">
         {data ? (
-          <span className="text-ui-caption text-muted-foreground">
-            <span className="font-mono text-foreground tabular-nums">
-              {formatLPT(data.minted, { compact: true })}
-            </span>{" "}
-            minted so far
-            {data.total > data.called && (
-              <> · {data.total - data.called} still to call</>
-            )}
-          </span>
+          <>
+            {data.called}
+            <span className="text-muted-foreground">/{data.total}</span>
+          </>
         ) : (
-          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-3.5 w-12" />
         )}
-      </div>
-      <div className="flex items-center gap-4">
-        <span className="font-mono text-[22px] leading-none tabular-nums">
-          {data ? (
-            <>
-              {data.called}
-              <span className="text-muted-foreground">/{data.total}</span>
-            </>
-          ) : (
-            <Skeleton className="h-6 w-16" />
-          )}
-        </span>
+      </span>
+      <div
+        role="progressbar"
+        aria-label="Orchestrators that have called reward this round"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-1.5 min-w-16 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]"
+      >
         <div
-          role="progressbar"
-          aria-label="Orchestrators that have called reward this round"
-          aria-valuenow={Math.round(pct)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          className="h-2 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]"
-        >
-          <div
-            className="h-full rounded-full bg-green-bright transition-[width] duration-700 ease-out"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+          className="h-full rounded-full bg-green-bright transition-[width] duration-700 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
-    </Card>
+      {data && (
+        <span className="basis-full text-ui-caption text-muted-foreground sm:basis-auto">
+          {left > 0 ? `${left} to go · ` : "All called · "}
+          <span className="font-mono text-foreground tabular-nums">
+            {formatLPT(data.minted, { compact: true })}
+          </span>{" "}
+          minted
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -449,9 +443,6 @@ export default function NetworkPage() {
               <RoundCardSkeleton />
             )}
             <NetworkKpis protocol={protocol} />
-          </div>
-          <div className="mt-4">
-            <RewardCalls protocol={protocol} />
           </div>
         </Section>
       )}
