@@ -19,6 +19,7 @@ import {
 } from "@/components/page";
 import { Ring, roundState, useNow } from "@/components/shell/round-clock";
 import { Segmented, Skeleton, StatusDot } from "@/components/ui/misc";
+import { cn } from "@/lib/cn";
 import {
   formatDate,
   formatDuration,
@@ -341,49 +342,85 @@ function HistorySection() {
  * shows the protocol moving; a laggard late in a round is worth knowing.
  */
 /** Footer of the round card: who has called reward so far this round. */
+function FooterStat({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-1.5 border-hairline px-4 py-3.5 sm:px-5",
+        className
+      )}
+    >
+      <span className="truncate text-ui-caption text-muted-foreground">
+        {label}
+      </span>
+      <div className="font-mono text-[13px] leading-5 whitespace-nowrap tabular-nums">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Footer of the round card: this round's reward calls and what it has paid
+ * out so far. Three columns when the card is wide; on a narrow card the
+ * reward calls take a full row so the bar keeps a useful length.
+ */
 function RewardCalls({ round }: { round: number }) {
   const { data } = useRewardProgress(round);
   const pct = data && data.total > 0 ? (data.called / data.total) * 100 : 0;
+  const loading = <Skeleton className="h-3.5 w-14" />;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline px-5 py-3.5 sm:px-6">
-      <span className="text-ui-caption text-muted-foreground">
-        Reward calls
-      </span>
-      <span className="font-mono text-[13px] tabular-nums">
-        {data ? (
-          <>
-            {data.called}
-            <span className="text-muted-foreground">/{data.total}</span>
-          </>
-        ) : (
-          <Skeleton className="h-3.5 w-12" />
-        )}
-      </span>
-      <div
-        role="progressbar"
-        aria-label="Orchestrators that have called reward this round"
-        aria-valuenow={Math.round(pct)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        className="h-1.5 min-w-16 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]"
-      >
-        <div
-          className="h-full rounded-full bg-green-bright transition-[width] duration-700 ease-out"
-          style={{ width: `${pct}%` }}
-        />
+    <div className="@container border-t border-hairline">
+      <div className="grid grid-cols-2 @min-[26rem]:grid-cols-3">
+        <FooterStat
+          label="Reward calls"
+          className="col-span-2 @min-[26rem]:col-span-1"
+        >
+          {data ? (
+            <span className="flex items-center gap-2.5">
+              <span>
+                {data.called}
+                <span className="text-muted-foreground">/{data.total}</span>
+              </span>
+              <span
+                role="progressbar"
+                aria-label="Orchestrators that have called reward this round"
+                aria-valuenow={Math.round(pct)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                className="h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]"
+              >
+                <span
+                  className="block h-full rounded-full bg-green-bright transition-[width] duration-700 ease-out"
+                  style={{ width: `${pct}%` }}
+                />
+              </span>
+            </span>
+          ) : (
+            loading
+          )}
+        </FooterStat>
+        <FooterStat
+          label="Minted"
+          className="border-t @min-[26rem]:border-t-0 @min-[26rem]:border-l"
+        >
+          {data ? formatLPT(data.minted, { compact: true }) : loading}
+        </FooterStat>
+        <FooterStat
+          label="Fees"
+          className="border-t border-l @min-[26rem]:border-t-0"
+        >
+          {data ? formatETH(data.fees) : loading}
+        </FooterStat>
       </div>
-      {data && (
-        <span className="basis-full text-ui-caption text-muted-foreground sm:basis-auto">
-          <span className="font-mono text-foreground tabular-nums">
-            {formatLPT(data.minted, { compact: true })}
-          </span>{" "}
-          minted ·{" "}
-          <span className="font-mono text-foreground tabular-nums">
-            {formatETH(data.fees)}
-          </span>{" "}
-          in fees
-        </span>
-      )}
     </div>
   );
 }
