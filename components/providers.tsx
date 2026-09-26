@@ -50,6 +50,13 @@ const safeAppWallet = (): Wallet => ({
 });
 
 function makeWagmiConfig() {
+  if (!WALLET_CONNECT_PROJECT_ID && typeof window !== "undefined") {
+    // WalletConnect (and wallets that fall back to it, like Trust without
+    // its extension) can't connect without a project ID; say so plainly.
+    console.warn(
+      "Livepeer Explorer: NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID was not set when this build was made, so WalletConnect won't connect."
+    );
+  }
   const isSafeApp = typeof window !== "undefined" && window.parent !== window;
   return getDefaultConfig({
     appName: "Livepeer Explorer",
