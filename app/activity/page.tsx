@@ -29,7 +29,6 @@ import {
   useOrchestrators,
   useTransactionEvents,
 } from "@/lib/hooks/queries";
-import type { ActivityEvent } from "@/lib/subgraph/network";
 
 type Filter =
   | "all"
@@ -50,19 +49,6 @@ const FILTERS = [
   { value: "gateways", label: "Gateways" },
 ] as const;
 
-const TYPES: Record<Exclude<Filter, "all">, readonly string[]> = {
-  fees: ["WinningTicketRedeemed", "WithdrawFees"],
-  staking: ["Bond", "Unbond", "Rebond", "TransferBond", "WithdrawStake"],
-  rewards: ["Reward", "NewRound"],
-  governance: ["Vote", "TreasuryVote", "PollCreated"],
-  orchestrators: [
-    "TranscoderUpdate",
-    "TranscoderActivated",
-    "TranscoderDeactivated",
-  ],
-  gateways: ["DepositFunded", "ReserveFunded", "Withdrawal"],
-};
-
 const EMPTY: Record<Filter, string> = {
   all: "No recent activity.",
   fees: "No recent fee activity.",
@@ -72,11 +58,6 @@ const EMPTY: Record<Filter, string> = {
   orchestrators: "No recent orchestrator changes.",
   gateways: "No recent gateway deposits or withdrawals.",
 };
-
-const byType = (events: ActivityEvent[] | undefined, filter: Filter) =>
-  filter === "all"
-    ? events
-    : events?.filter((e) => TYPES[filter].includes(e.type));
 
 /** What the search box holds: an address, a transaction, an ENS name. */
 function parseQuery(raw: string) {
@@ -151,9 +132,14 @@ function AddressActivity({
   address: string;
   filter: Filter;
 }) {
-  const q = useAddressEvents(address);
-  const all = useMemo(() => q.data?.pages.flatMap((p) => p.events), [q.data]);
-  const events = useMemo(() => byType(all, filter), [all, filter]);
+  const q = useAddressEvents(address, filter);
+  const events = useMemo(() => {
+    // Pages can repeat rows that share a timestamp across the boundary.
+    const seen = new Set<string>();
+    return q.data?.pages
+      .flatMap((p) => p.events)
+      .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)));
+  }, [q.data]);
   if (q.error && !q.data)
     return <ErrorNotice error={q.error} onRetry={() => q.refetch()} />;
   return (
@@ -164,7 +150,7 @@ function AddressActivity({
         emptyText={
           filter === "all"
             ? "No activity for this address yet."
-            : "Nothing of this kind for this address in what's loaded."
+            : "Nothing of this kind for this address."
         }
       />
       {q.hasNextPage && (

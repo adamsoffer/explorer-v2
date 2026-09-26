@@ -441,6 +441,26 @@ function roundAt(ts) {
   return r;
 }
 
+// One batch redemption: 70 tickets for orchestrator B in a single
+// transaction, more than a page, to exercise paging through a timestamp.
+{
+  const g = gateways[2];
+  const ts = Math.floor(f.now - 3 * 3600);
+  const tx = "0x" + "ba7c".repeat(16);
+  for (let k = 0; k < 70; k++)
+    g.tickets.push({
+      id: `${tx}-${String(k).padStart(3, "0")}`,
+      __typename: "WinningTicketRedeemedEvent",
+      round: roundAt(ts),
+      timestamp: ts,
+      tx,
+      from: f.demo.B,
+      delegate: f.demo.B,
+      gateway: g.id,
+      amount: "0.01500000",
+    });
+}
+
 const gatewayById = new Map(gateways.map((g) => [g.id, g]));
 const gatewayTickets = gateways.flatMap((g) => g.tickets);
 console.log(
@@ -733,6 +753,75 @@ function liveEvent(ts) {
   ).unref();
 }
 
+/* ── Feed paging helpers ─────────────────────────────────────────────────── */
+
+const allEvents = () => [
+  ...live,
+  ...f.transactions.flatMap((t) => t.events),
+  ...gatewayTickets,
+  ...gateways.flatMap((g) => g.funding),
+];
+// The subgraph breaks timestamp ties by id, which `skip` relies on.
+const newestFirst = (a, b) =>
+  b.timestamp - a.timestamp || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const ADDRESS_FIELDS = [
+  "delegator",
+  "delegate",
+  "newDelegate",
+  "oldDelegate",
+  "gateway",
+];
+
+function collectionsFromQuery(query, id) {
+  const who = id ? String(id).toLowerCase() : null;
+  const out = {};
+  const re =
+    /(\w+Events)\(first: (\d+)(?:, skip: (\d+))?[^)]*?timestamp_(lte|gt): (\d+)/g;
+  for (const [, c, first, skip, op, at] of query.matchAll(re)) {
+    const bound = Number(at);
+    out[c] = allEvents()
+      .filter(
+        (e) => e.__typename[0].toLowerCase() + e.__typename.slice(1) + "s" === c
+      )
+      .filter((e) =>
+        op === "lte" ? e.timestamp <= bound : e.timestamp > bound
+      )
+      .filter(
+        (e) =>
+          !who ||
+          ADDRESS_FIELDS.some((r) => String(e[r] ?? "").toLowerCase() === who)
+      )
+      .sort(newestFirst)
+      .slice(Number(skip ?? 0), Number(skip ?? 0) + Number(first))
+      .map(shapeEvent);
+  }
+  return out;
+}
+
+function transactionsPage(keep, first, skip) {
+  const byTx = new Map();
+  for (const e of allEvents()) {
+    const t = byTx.get(e.tx) ?? {
+      id: e.tx,
+      timestamp: e.timestamp,
+      events: [],
+    };
+    t.events.push(e);
+    byTx.set(e.tx, t);
+  }
+  return {
+    transactions: [...byTx.values()]
+      .filter(keep)
+      .sort(newestFirst)
+      .slice(skip, skip + first)
+      .map((t) => ({
+        id: t.id,
+        timestamp: t.timestamp,
+        events: t.events.map(shapeEvent),
+      })),
+  };
+}
+
 const resolvers = {
   Delegators: ({ ids }) => ({
     protocol: { currentRound: { id: String(f.protocol.currentRound) } },
@@ -915,34 +1004,18 @@ const resolvers = {
     };
   },
 
-  // Everything involving an address, per event collection, like the
-  // subgraph's `or` filters across each role.
-  AddressEvents: ({ id, first = 50, before = 2 ** 31 - 1 }) => {
-    const who = String(id).toLowerCase();
-    const roles = [
-      "delegator",
-      "delegate",
-      "newDelegate",
-      "oldDelegate",
-      "gateway",
-    ];
-    const all = [
-      ...live,
-      ...f.transactions.flatMap((t) => t.events),
-      ...gatewayTickets,
-      ...gateways.flatMap((g) => g.funding),
-    ].filter(
-      (e) =>
-        e.timestamp <= before &&
-        roles.some((r) => String(e[r] ?? "").toLowerCase() === who)
-    );
-    const out = {};
-    for (const e of all.sort((a, b) => b.timestamp - a.timestamp)) {
-      const key = e.__typename[0].toLowerCase() + e.__typename.slice(1) + "s";
-      const rows = (out[key] ??= []);
-      if (rows.length < first) rows.push(shapeEvent(e));
-    }
-    return out;
+  // Collection queries carry their bounds inline, per collection:
+  // `xEvents(first: N, skip: S, ... timestamp_lte: T ...)` or
+  // `timestamp_gt: T` for the live head; with $id, only that address.
+  AddressEvents: (vars, query) => collectionsFromQuery(query, vars.id),
+  FeedCollections: (_, query) => collectionsFromQuery(query),
+  FeedCollectionsSince: (_, query) => collectionsFromQuery(query),
+
+  FeedTransactions: ({ first = 50, skip = 0, before }) =>
+    transactionsPage((t) => t.timestamp <= before, first, skip),
+  FeedTransactionsSince: (_, query) => {
+    const after = Number(/timestamp_gt: (\d+)/.exec(query)?.[1] ?? 0);
+    return transactionsPage((t) => t.timestamp > after, 100, 0);
   },
 
   TransactionEvents: ({ id }) => {
@@ -956,42 +1029,6 @@ const resolvers = {
     return {
       transaction: events.length ? { events: events.map(shapeEvent) } : null,
     };
-  },
-
-  // The Activity feed, a page at a time: `timestamp_lte` pages back,
-  // `timestamp_gt` polls for anything newer.
-  FeedTransactions: ({ first = 50, at }, query) => {
-    const newer = query.includes("timestamp_gt");
-    const txs = [
-      ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),
-      ...f.transactions,
-    ]
-      .filter((t) => (newer ? t.timestamp > at : t.timestamp <= at))
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, first);
-    return {
-      transactions: txs.map((t) => ({
-        timestamp: t.timestamp,
-        events: t.events.map(shapeEvent),
-      })),
-    };
-  },
-
-  FeedCollections: ({ first = 50, at }, query) => {
-    const newer = query.includes("timestamp_gt");
-    const wanted = [...query.matchAll(/(\w+Events)\(first/g)].map((m) => m[1]);
-    const all = [
-      ...live,
-      ...f.transactions.flatMap((t) => t.events),
-      ...gatewayTickets,
-      ...gateways.flatMap((g) => g.funding),
-    ].filter((e) => (newer ? e.timestamp > at : e.timestamp <= at));
-    const out = Object.fromEntries(wanted.map((c) => [c, []]));
-    for (const e of all.sort((a, b) => b.timestamp - a.timestamp)) {
-      const key = e.__typename[0].toLowerCase() + e.__typename.slice(1) + "s";
-      if (out[key] && out[key].length < first) out[key].push(shapeEvent(e));
-    }
-    return out;
   },
 
   Events: ({ first = 100 }) => ({

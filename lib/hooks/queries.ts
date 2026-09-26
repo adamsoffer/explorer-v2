@@ -30,6 +30,7 @@ import {
   fetchRewardProgress,
   fetchTransactionEvents,
 } from "@/lib/subgraph/network";
+import { type Cursor, FIRST_CURSOR } from "@/lib/subgraph/paging";
 import { fetchPortfolio } from "@/lib/subgraph/portfolio";
 import {
   fetchElectorate,
@@ -157,8 +158,8 @@ export function useFeed(filter: FeedFilter, enabled = true) {
   const queryClient = useQueryClient();
   const pages = useInfiniteQuery({
     queryKey: ["feed", filter],
-    queryFn: ({ pageParam }) => fetchFeedPage(filter, pageParam ?? undefined),
-    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => fetchFeedPage(filter, pageParam),
+    initialPageParam: FIRST_CURSOR as Cursor,
     getNextPageParam: (last) => last.next,
     enabled,
     staleTime: Infinity,
@@ -199,13 +200,19 @@ export function useFeed(filter: FeedFilter, enabled = true) {
   };
 }
 
-/** Everything involving an address, newest first, a page at a time. */
-export function useAddressEvents(address: string | null) {
+/**
+ * Everything involving an address, newest first, a page at a time. The
+ * filter is part of the query, so filtered results reach back through all
+ * of the address's history, not just what's loaded.
+ */
+export function useAddressEvents(
+  address: string | null,
+  filter: FeedFilter = "all"
+) {
   return useInfiniteQuery({
-    queryKey: ["address-events", address?.toLowerCase()],
-    queryFn: ({ pageParam }) =>
-      fetchAddressEvents(address!, { before: pageParam ?? undefined }),
-    initialPageParam: null as number | null,
+    queryKey: ["address-events", address?.toLowerCase(), filter],
+    queryFn: ({ pageParam }) => fetchAddressEvents(address!, filter, pageParam),
+    initialPageParam: FIRST_CURSOR as Cursor,
     getNextPageParam: (last) => last.next,
     enabled: Boolean(address),
     staleTime: MINUTE,

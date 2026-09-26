@@ -4,6 +4,7 @@ import { PoolHistory, PRECISE } from "@/lib/portfolio/compute";
 
 import { isActiveInRound } from "./active";
 import { paginate, querySubgraph } from "./client";
+import { advance, type Cursor, FIRST_CURSOR } from "./paging";
 import { toPoolPoint } from "./portfolio";
 
 /* ── Raw subgraph shapes (numbers arrive as strings) ─────────────────────── */
@@ -963,115 +964,7 @@ export async function fetchGatewayEvents(
     .slice(0, first);
 }
 
-/* ── Everything involving one address ─────────────────────────────────── */
-
-/**
- * Event collections and the fields where an address can appear, as
- * delegator, orchestrator, gateway or voter. Poll votes store the voter as
- * plain text, so they're matched separately against both spellings.
- */
-const ADDRESS_ROLES: [collection: string, fields: string[]][] = [
-  ["bondEvents", ["delegator", "newDelegate", "oldDelegate"]],
-  ["unbondEvents", ["delegator", "delegate"]],
-  ["rebondEvents", ["delegator", "delegate"]],
-  ["withdrawStakeEvents", ["delegator"]],
-  ["withdrawFeesEvents", ["delegator"]],
-  ["transferBondEvents", ["oldDelegator", "newDelegator"]],
-  ["rewardEvents", ["delegate"]],
-  ["transcoderUpdateEvents", ["delegate"]],
-  ["transcoderActivatedEvents", ["delegate"]],
-  ["transcoderDeactivatedEvents", ["delegate"]],
-  ["winningTicketRedeemedEvents", ["recipient", "sender"]],
-  ["depositFundedEvents", ["sender"]],
-  ["reserveFundedEvents", ["reserveHolder"]],
-  ["withdrawalEvents", ["sender"]],
-  ["treasuryVoteEvents", ["voter"]],
-];
-
-const ADDRESS_EVENTS = /* GraphQL */ `
-  query AddressEvents($id: String!, $spellings: [String!]!, $first: Int!, $before: Int!) {
-    ${ADDRESS_ROLES.map(
-      ([collection, fields]) =>
-        `${collection}(first: $first, orderBy: timestamp, orderDirection: desc, where: { or: [${fields
-          .map((f) => `{ ${f}: $id, timestamp_lte: $before }`)
-          .join(", ")}] }) { ${EVENT_FIELDS} }`
-    ).join("\n")}
-    voteEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { voter_in: $spellings, timestamp_lte: $before }) { ${EVENT_FIELDS} }
-  }
-`;
-
-export type EventPage = {
-  events: ActivityEvent[];
-  /** Pass as `before` for the next page; null when there's no more. */
-  next: number | null;
-};
-
-/**
- * One page of everything involving an address, newest first, across all
- * the roles it can play. Each collection returns up to `first` events at
- * or before `before`; the merged page stops where the earliest collection
- * ran out, so no event is skipped between pages.
- */
-export async function fetchAddressEvents(
-  address: string,
-  { first = 50, before }: { first?: number; before?: number } = {}
-): Promise<EventPage> {
-  const id = address.toLowerCase();
-  const data = await querySubgraph<Record<string, RawEvent[]>>(ADDRESS_EVENTS, {
-    id,
-    spellings: [id, getAddress(id)],
-    first,
-    before: before ?? 2 ** 31 - 1,
-  });
-  return mergeEventPage(data, first);
-}
-
-/**
- * Merge per-collection results into one page. A collection that returned a
- * full page may hold older events we haven't seen yet, so only events newer
- * than the oldest one it returned are complete; the rest come with the
- * next page, which starts at that timestamp.
- */
-export function mergeEventPage(
-  data: Record<string, RawEvent[]>,
-  first: number
-): EventPage {
-  let cutoff = 0;
-  for (const rows of Object.values(data))
-    if (rows.length >= first)
-      cutoff = Math.max(cutoff, Number(rows[rows.length - 1].timestamp));
-  const events = Object.values(data)
-    .flat()
-    .map(toEvent)
-    .filter((e) => cutoff === 0 || e.timestamp > cutoff)
-    .sort((a, b) => b.timestamp - a.timestamp);
-  return { events, next: cutoff || null };
-}
-
-const TRANSACTION_EVENTS = /* GraphQL */ `
-  query TransactionEvents($id: ID!) {
-    transaction(id: $id) {
-      events {
-        ${EVENT_FIELDS}
-      }
-    }
-  }
-`;
-
-/** A transaction's protocol events, or null if the subgraph hasn't seen it. */
-export async function fetchTransactionEvents(
-  hash: string
-): Promise<ActivityEvent[] | null> {
-  const { transaction } = await querySubgraph<{
-    transaction: { events: RawEvent[] | null } | null;
-  }>(TRANSACTION_EVENTS, { id: hash.toLowerCase() });
-  if (!transaction) return null;
-  return (transaction.events ?? [])
-    .filter((e) => EVENT_TYPES.includes(e.__typename))
-    .map(toEvent);
-}
-
-/* ── The protocol feed, a page at a time ─────────────────────────────────── */
+/* ── The feed and address history, a page at a time ─────────────────────── */
 
 /** Event collections behind each Activity filter. */
 export const FEED_COLLECTIONS = {
@@ -1095,69 +988,142 @@ export const FEED_COLLECTIONS = {
 
 export type FeedFilter = "all" | keyof typeof FEED_COLLECTIONS;
 
-const FEED_PAGE = 50;
+const ALL_COLLECTIONS = Object.values(FEED_COLLECTIONS).flat();
 
-const feedQuery = (
+/**
+ * Where an address can appear in each collection: as delegator,
+ * orchestrator, gateway or voter. Poll votes store the voter as plain text,
+ * so they match either spelling. Collections not listed (new rounds, new
+ * polls) involve no address.
+ */
+const ADDRESS_ROLES: Record<string, string[]> = {
+  bondEvents: ["delegator", "newDelegate", "oldDelegate"],
+  unbondEvents: ["delegator", "delegate"],
+  rebondEvents: ["delegator", "delegate"],
+  withdrawStakeEvents: ["delegator"],
+  withdrawFeesEvents: ["delegator"],
+  transferBondEvents: ["oldDelegator", "newDelegator"],
+  rewardEvents: ["delegate"],
+  transcoderUpdateEvents: ["delegate"],
+  transcoderActivatedEvents: ["delegate"],
+  transcoderDeactivatedEvents: ["delegate"],
+  winningTicketRedeemedEvents: ["recipient", "sender"],
+  depositFundedEvents: ["sender"],
+  reserveFundedEvents: ["reserveHolder"],
+  withdrawalEvents: ["sender"],
+  treasuryVoteEvents: ["voter"],
+  voteEvents: ["voter_in"],
+};
+
+export type EventPage = {
+  events: ActivityEvent[];
+  /** Where the next page starts; null when there's no more. */
+  next: Cursor | null;
+};
+
+const PAGE = 50;
+
+const collectionsFor = (filter: FeedFilter): readonly string[] =>
+  filter === "all" ? ALL_COLLECTIONS : FEED_COLLECTIONS[filter];
+
+/** One collection's slice of a page, with the cursor's bounds inlined. */
+function collectionQuery(collection: string, cursor: Cursor, address?: string) {
+  const bound = `timestamp_lte: ${cursor.before}`;
+  let where = `{ ${bound} }`;
+  if (address) {
+    const roles = ADDRESS_ROLES[collection];
+    where =
+      roles.length === 1
+        ? `{ ${roles[0]}: ${
+            roles[0] === "voter_in" ? "$spellings" : "$id"
+          }, ${bound} }`
+        : `{ or: [${roles.map((r) => `{ ${r}: $id, ${bound} }`).join(", ")}] }`;
+  }
+  return `${collection}(first: ${PAGE}, skip: ${
+    cursor.skip[collection] ?? 0
+  }, orderBy: timestamp, orderDirection: desc, where: ${where}) { ${EVENT_FIELDS} }`;
+}
+
+/**
+ * One page of events from several collections, merged newest first. With
+ * an address, only events it's part of; with a filter, only that filter's
+ * collections, so a filtered view pages back through all history.
+ */
+async function fetchCollectionsPage(
+  collections: readonly string[],
+  cursor: Cursor,
+  address?: string
+): Promise<EventPage> {
+  const todo = collections.filter(
+    (c) => !cursor.done.includes(c) && (!address || ADDRESS_ROLES[c])
+  );
+  if (!todo.length) return { events: [], next: null };
+  const id = address?.toLowerCase();
+  const query = /* GraphQL */ `
+    query ${address ? "AddressEvents" : "FeedCollections"}${
+    address ? "($id: String!, $spellings: [String!]!)" : ""
+  } {
+      ${todo.map((c) => collectionQuery(c, cursor, id)).join("\n")}
+    }
+  `;
+  const data = await querySubgraph<Record<string, RawEvent[]>>(
+    query,
+    id ? { id, spellings: [id, getAddress(id)] } : {}
+  );
+  const { shown, next } = advance(data, cursor, PAGE);
+  return { events: shown.map(toEvent), next };
+}
+
+/** Everything involving an address, for a filter, a page at a time. */
+export function fetchAddressEvents(
+  address: string,
   filter: FeedFilter,
-  bound: "timestamp_lte" | "timestamp_gt"
-) =>
-  filter === "all"
-    ? /* GraphQL */ `
-      query FeedTransactions($first: Int!, $at: Int!) {
-        transactions(first: $first, orderBy: timestamp, orderDirection: desc, where: { ${bound}: $at }) {
-          timestamp
-          events { ${EVENT_FIELDS} }
-        }
-      }`
-    : /* GraphQL */ `
-      query FeedCollections($first: Int!, $at: Int!) {
-        ${FEED_COLLECTIONS[filter]
-          .map(
-            (c) =>
-              `${c}(first: $first, orderBy: timestamp, orderDirection: desc, where: { ${bound}: $at }) { ${EVENT_FIELDS} }`
-          )
-          .join("\n")}
-      }`;
+  cursor: Cursor = FIRST_CURSOR
+): Promise<EventPage> {
+  return fetchCollectionsPage(collectionsFor(filter), cursor, address);
+}
 
-type RawTransaction = { timestamp: number; events: RawEvent[] | null };
+type RawTransaction = {
+  id: string;
+  timestamp: number;
+  events: RawEvent[] | null;
+};
 
-/** A transaction list as the one collection `mergeEventPage` expects. */
 const txEvents = (txs: RawTransaction[]) =>
   txs.flatMap((t) =>
     (t.events ?? []).filter((e) => EVENT_TYPES.includes(e.__typename))
   );
 
 /**
- * One page of the feed for a filter, newest first, at or before `before`.
- * "All" pages through transactions; a filter reads its own collections, so
- * filtered views reach as far back as you page instead of only what the
- * latest transactions happened to hold.
+ * One page of the protocol feed. "All" pages through transactions (each
+ * one's events together); a filter reads its own collections.
  */
 export async function fetchFeedPage(
   filter: FeedFilter,
-  before?: number
+  cursor: Cursor = FIRST_CURSOR
 ): Promise<EventPage> {
-  const at = before ?? 2 ** 31 - 1;
-  if (filter === "all") {
-    const { transactions } = await querySubgraph<{
-      transactions: RawTransaction[];
-    }>(feedQuery("all", "timestamp_lte"), { first: FEED_PAGE, at });
-    // A full page may stop partway through a timestamp: cut there, as
-    // mergeEventPage does per collection.
-    const full = transactions.length >= FEED_PAGE;
-    const cutoff = full
-      ? Number(transactions[transactions.length - 1].timestamp)
-      : 0;
-    const events = txEvents(transactions)
-      .map(toEvent)
-      .filter((e) => cutoff === 0 || e.timestamp > cutoff);
-    return { events, next: cutoff || null };
-  }
-  const data = await querySubgraph<Record<string, RawEvent[]>>(
-    feedQuery(filter, "timestamp_lte"),
-    { first: FEED_PAGE, at }
+  if (filter !== "all")
+    return fetchCollectionsPage(FEED_COLLECTIONS[filter], cursor);
+  const { transactions } = await querySubgraph<{
+    transactions: RawTransaction[];
+  }>(
+    /* GraphQL */ `
+      query FeedTransactions($first: Int!, $skip: Int!, $before: Int!) {
+        transactions(first: $first, skip: $skip, orderBy: timestamp, orderDirection: desc, where: { timestamp_lte: $before }) {
+          id
+          timestamp
+          events { ${EVENT_FIELDS} }
+        }
+      }
+    `,
+    {
+      first: PAGE,
+      skip: cursor.skip.transactions ?? 0,
+      before: cursor.before,
+    }
   );
-  return mergeEventPage(data, FEED_PAGE);
+  const { shown, next } = advance({ transactions }, cursor, PAGE);
+  return { events: txEvents(shown).map(toEvent), next };
 }
 
 /** Events newer than `after`, for keeping the top of the feed live. */
@@ -1165,22 +1131,60 @@ export async function fetchFeedSince(
   filter: FeedFilter,
   after: number
 ): Promise<ActivityEvent[]> {
+  const since = `where: { timestamp_gt: ${Math.floor(after)} }`;
   if (filter === "all") {
     const { transactions } = await querySubgraph<{
       transactions: RawTransaction[];
-    }>(feedQuery("all", "timestamp_gt"), { first: 100, at: after });
+    }>(/* GraphQL */ `
+        query FeedTransactionsSince {
+          transactions(first: 100, orderBy: timestamp, orderDirection: desc, ${since}) {
+            id
+            timestamp
+            events { ${EVENT_FIELDS} }
+          }
+        }
+      `);
     return txEvents(transactions)
       .map(toEvent)
       .sort((a, b) => b.timestamp - a.timestamp);
   }
-  const data = await querySubgraph<Record<string, RawEvent[]>>(
-    feedQuery(filter, "timestamp_gt"),
-    { first: 100, at: after }
-  );
+  const data = await querySubgraph<Record<string, RawEvent[]>>(/* GraphQL */ `
+    query FeedCollectionsSince {
+      ${FEED_COLLECTIONS[filter]
+        .map(
+          (c) =>
+            `${c}(first: 100, orderBy: timestamp, orderDirection: desc, ${since}) { ${EVENT_FIELDS} }`
+        )
+        .join("\n")}
+    }
+  `);
   return Object.values(data)
     .flat()
     .map(toEvent)
     .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+const TRANSACTION_EVENTS = /* GraphQL */ `
+  query TransactionEvents($id: ID!) {
+    transaction(id: $id) {
+      events {
+        ${EVENT_FIELDS}
+      }
+    }
+  }
+`;
+
+/** A transaction's protocol events, or null if the subgraph hasn't seen it. */
+export async function fetchTransactionEvents(
+  hash: string
+): Promise<ActivityEvent[] | null> {
+  const { transaction } = await querySubgraph<{
+    transaction: { events: RawEvent[] | null } | null;
+  }>(TRANSACTION_EVENTS, { id: hash.toLowerCase() });
+  if (!transaction) return null;
+  return (transaction.events ?? [])
+    .filter((e) => EVENT_TYPES.includes(e.__typename))
+    .map(toEvent);
 }
 
 const ORCHESTRATOR_UPDATES = /* GraphQL */ `
