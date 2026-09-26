@@ -1,10 +1,12 @@
 "use client";
 
+import { useQueries } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { normalize } from "viem/ens";
-import { useEnsAvatar, useEnsName } from "wagmi";
+import { useConfig, useEnsAvatar, useEnsName } from "wagmi";
+import { getEnsNameQueryOptions } from "wagmi/query";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -171,4 +173,31 @@ export function Identity({
       {body}
     </Link>
   );
+}
+
+/* ── Search by address or ENS name ───────────────────────────────────────── */
+
+/**
+ * ENS names for every address, fetched only while searching. Shares the
+ * cache with the per-row `useEnsName` lookups, so rows already on screen
+ * cost nothing extra.
+ */
+export function useEnsNames(addresses: string[], enabled: boolean) {
+  const config = useConfig();
+  const results = useQueries({
+    queries: addresses.map((address) => ({
+      ...getEnsNameQueryOptions(config, {
+        address: address as `0x${string}`,
+        chainId: L1_CHAIN.id,
+      }),
+      enabled,
+      staleTime: 60 * 60_000,
+      retry: false,
+    })),
+  });
+  const map = new Map<string, string>();
+  results.forEach((r, i) => {
+    if (r.data) map.set(addresses[i], r.data.toLowerCase());
+  });
+  return map;
 }

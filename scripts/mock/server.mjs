@@ -684,18 +684,22 @@ const resolvers = {
     const t = transcoderById.get(key);
     return {
       transcoder: t ? shapeTranscoder(t, Number(windowStart), true) : null,
-      delegators: (delegatorsByDelegate.get(key) ?? [])
-        .filter((d) => Number(d.bondedAmount) > 0)
-        .sort((a, b) => Number(b.bondedAmount) - Number(a.bondedAmount))
-        .slice(0, 1000)
-        .map((d) => ({
-          id: d.id,
-          bondedAmount: d.bondedAmount,
-          shares: d.shares,
-          startRound: d.startRound,
-        })),
     };
   },
+
+  OrchestratorDelegators: ({ delegate, first, lastId }) => ({
+    delegators: page(
+      (delegatorsByDelegate.get(String(delegate).toLowerCase()) ?? []).filter(
+        (d) => Number(d.bondedAmount) > 0
+      ),
+      { first, lastId }
+    ).map((d) => ({
+      id: d.id,
+      bondedAmount: d.bondedAmount,
+      shares: d.shares,
+      startRound: d.startRound,
+    })),
+  }),
 
   Gateways: ({ minActiveDay = 0 }) => ({
     broadcasters: gateways

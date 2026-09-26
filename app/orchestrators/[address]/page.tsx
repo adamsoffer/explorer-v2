@@ -7,12 +7,8 @@ import { useMemo, useState } from "react";
 import { isAddress } from "viem";
 
 import { TimeSeriesChart } from "@/components/charts/time-series";
-import {
-  Avatar,
-  CopyButton,
-  Identity,
-  useIdentity,
-} from "@/components/identity";
+import { Avatar, CopyButton, useIdentity } from "@/components/identity";
+import { OrchestratorDelegators } from "@/components/orchestrators/delegators";
 import {
   Card,
   EmptyState,
@@ -533,62 +529,15 @@ export default function OrchestratorPage() {
                       : undefined
                   }
                 />
-                <Card className="overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-left">
-                    <thead>
-                      <tr className="border-b border-hairline text-ui-caption text-muted-foreground">
-                        <th className="px-4 py-2.5 font-normal">Delegator</th>
-                        <th className="px-4 py-2.5 text-right font-normal">
-                          Stake
-                        </th>
-                        <th className="px-4 py-2.5 text-right font-normal">
-                          Share
-                        </th>
-                        <th className="px-4 py-2.5 text-right font-normal">
-                          Since round
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(o?.delegatorList ?? []).slice(0, 25).map((d) => (
-                        <tr
-                          key={d.id}
-                          className="border-b border-hairline last:border-0 hover:bg-hover/60"
-                        >
-                          <td className="px-4 py-2.5">
-                            <Identity
-                              address={d.id}
-                              size={22}
-                              label={
-                                d.id === address ? "Self-stake" : undefined
-                              }
-                            />
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums">
-                            {formatLPT(d.bondedAmount)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                            {o && o.totalStake > 0
-                              ? `${(
-                                  (d.bondedAmount / o.totalStake) *
-                                  100
-                                ).toFixed(2)}%`
-                              : "—"}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-[13px] text-muted-foreground tabular-nums">
-                            {d.startRound.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {o && o.delegatorList.length > 25 && (
-                    <p className="border-t border-hairline px-4 py-2.5 text-ui-caption text-muted-foreground">
-                      Showing top 25 of{" "}
-                      {o.delegatorList.length.toLocaleString()}
-                    </p>
-                  )}
-                </Card>
+                {o ? (
+                  <OrchestratorDelegators
+                    orchestrator={address}
+                    delegators={o.delegatorList}
+                    totalStake={o.totalStake}
+                  />
+                ) : (
+                  <Skeleton className="h-64 w-full rounded-md" />
+                )}
               </section>
             </div>
 

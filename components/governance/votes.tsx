@@ -1,6 +1,5 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -12,16 +11,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useConfig } from "wagmi";
-import { getEnsNameQueryOptions } from "wagmi/query";
 
-import { Avatar, useIdentity } from "@/components/identity";
+import { Avatar, useEnsNames, useIdentity } from "@/components/identity";
 import { Card, EmptyState, ErrorNotice } from "@/components/page";
 import { useNow } from "@/components/shell/round-clock";
-import { Button } from "@/components/ui/button";
 import { Input, Segmented, Skeleton } from "@/components/ui/misc";
+import { ShowAll } from "@/components/ui/show-all";
 import { cn } from "@/lib/cn";
-import { L1_CHAIN, txUrl } from "@/lib/config";
+import { txUrl } from "@/lib/config";
 import { formatLPT, formatPercent, formatRelativeTime } from "@/lib/format";
 import { useElectorate, useOrchestrators } from "@/lib/hooks/queries";
 import type { CastVote, Electorate, VoteChoice } from "@/lib/subgraph/votes";
@@ -73,33 +70,6 @@ const NOT_VOTED_GRID =
 
 const pct = (share: number) =>
   formatPercent(share, { decimals: share < 1 ? 2 : 1 });
-
-/* ── Search by address or ENS name ───────────────────────────────────────── */
-
-/**
- * ENS names for every address, fetched only while searching. Shares the
- * cache with the per-row `useEnsName` lookups, so rows already on screen
- * cost nothing extra.
- */
-function useEnsNames(addresses: string[], enabled: boolean) {
-  const config = useConfig();
-  const results = useQueries({
-    queries: addresses.map((address) => ({
-      ...getEnsNameQueryOptions(config, {
-        address: address as `0x${string}`,
-        chainId: L1_CHAIN.id,
-      }),
-      enabled,
-      staleTime: 60 * 60_000,
-      retry: false,
-    })),
-  });
-  const map = new Map<string, string>();
-  results.forEach((r, i) => {
-    if (r.data) map.set(addresses[i], r.data.toLowerCase());
-  });
-  return map;
-}
 
 /* ── Cells ───────────────────────────────────────────────────────────────── */
 
@@ -389,25 +359,6 @@ function SortHeader({
       {label}
       {active && <Arrow className="size-3" />}
     </button>
-  );
-}
-
-function ShowMore({
-  shown,
-  total,
-  onMore,
-}: {
-  shown: number;
-  total: number;
-  onMore: () => void;
-}) {
-  if (shown >= total) return null;
-  return (
-    <div className="border-t border-hairline p-2">
-      <Button variant="ghost" size="sm" className="w-full" onClick={onMore}>
-        Show all {total.toLocaleString()}
-      </Button>
-    </div>
   );
 }
 
@@ -784,7 +735,7 @@ export function VotesPanel({
             })}
           </ul>
           {!filtering && (
-            <ShowMore
+            <ShowAll
               shown={visible}
               total={shownRows}
               onMore={() => setLimit(shownRows)}
@@ -843,7 +794,7 @@ export function VotesPanel({
             })}
           </ul>
           {!filtering && (
-            <ShowMore
+            <ShowAll
               shown={visible}
               total={shownRows}
               onMore={() => setLimit(shownRows)}

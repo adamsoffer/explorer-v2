@@ -542,11 +542,28 @@ const ORCHESTRATOR = /* GraphQL */ `
         cumulativeRewardFactor
       }
     }
+  }
+`;
+
+type RawDelegatorRow = {
+  id: string;
+  bondedAmount: string;
+  shares: string;
+  startRound: string;
+};
+
+/** Every delegator with stake, walked by id: an orchestrator can have more
+ * than a single query returns. */
+const ORCHESTRATOR_DELEGATORS = /* GraphQL */ `
+  query OrchestratorDelegators(
+    $delegate: String!
+    $first: Int!
+    $lastId: String!
+  ) {
     delegators(
-      where: { delegate: $id, bondedAmount_gt: "0" }
-      first: 1000
-      orderBy: bondedAmount
-      orderDirection: desc
+      where: { delegate: $delegate, bondedAmount_gt: "0", id_gt: $lastId }
+      first: $first
+      orderBy: id
     ) {
       id
       bondedAmount
@@ -584,20 +601,15 @@ export async function fetchOrchestrator(
   protocol: Protocol
 ): Promise<OrchestratorDetail | null> {
   const address = id.toLowerCase();
-  const [data, rawPools] = await Promise.all([
-    querySubgraph<{
-      transcoder: RawTranscoder | null;
-      delegators: {
-        id: string;
-        bondedAmount: string;
-        shares: string;
-        startRound: string;
-      }[];
-    }>(ORCHESTRATOR, {
+  const [data, rawPools, delegators] = await Promise.all([
+    querySubgraph<{ transcoder: RawTranscoder | null }>(ORCHESTRATOR, {
       id: address,
       windowStart: windowStart(protocol),
     }),
     paginate<RawDetailPool>(ORCHESTRATOR_POOLS, "pools", { delegate: address }),
+    paginate<RawDelegatorRow>(ORCHESTRATOR_DELEGATORS, "delegators", {
+      delegate: address,
+    }),
   ]);
   if (!data.transcoder) return null;
 
@@ -632,10 +644,10 @@ export async function fetchOrchestrator(
       protocol.roundSeconds
     ),
     pools,
-    delegatorCount: data.delegators.length,
+    delegatorCount: delegators.length,
     // Current stake is shares at the latest factor; `bondedAmount` is only
     // as fresh as each delegator's last claim.
-    delegatorList: data.delegators
+    delegatorList: delegators
       .map((d) => {
         const shares = BigInt(d.shares || "0");
         const stake =
