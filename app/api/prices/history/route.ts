@@ -1,5 +1,8 @@
 import { pricesAt } from "@/lib/prices/history";
 
+// A first, uncached export reads years of pages at a paced rate.
+export const maxDuration = 120;
+
 const MAX_TIMES = 20_000;
 const MAX_GET_TIMES = 50;
 const EARLIEST = Date.UTC(2015, 0, 1) / 1000;

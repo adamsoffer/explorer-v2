@@ -69,3 +69,31 @@ describe("pricesAt", () => {
     expect(calls.every((c) => c === "/products/LPT-USD/candles")).toBe(true);
   }, 10_000);
 });
+
+describe("pricesAt with a failing page", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it("prices what it can and leaves the rest null", async () => {
+    const bad = Date.UTC(2025, 0, 1) / 1000;
+    global.fetch = jest.fn(async (url: string | URL | Request) => {
+      const u = new URL(String(url));
+      const start = Date.parse(u.searchParams.get("start")!) / 1000;
+      const end = Date.parse(u.searchParams.get("end")!) / 1000;
+      if (bad >= start && bad <= end)
+        return Response.json({ message: "not found" }, { status: 404 });
+      const rows: number[][] = [];
+      for (let t = end; t >= start; t -= 3600) rows.push([t, 1, 2, 7, 1.5, 10]);
+      return Response.json(rows);
+    }) as typeof fetch;
+
+    const { pricesAt } = await import("./history");
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const [good, missing] = await pricesAt("ETH", [H, bad]);
+    expect(good).toBe(7);
+    expect(missing).toBeNull();
+    warn.mockRestore();
+  }, 20_000);
+});

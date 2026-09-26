@@ -16,6 +16,18 @@ export type Coin = "LPT" | "ETH";
 const HOUR = 3600;
 const PAGE_HOURS = 300;
 const CONCURRENCY = 3;
+/** Gap between request starts, shared by both coins: ~6 a second. */
+const SPACING_MS = 160;
+const RETRIES = 6;
+
+let nextSlot = 0;
+/** Wait for a turn, keeping under Coinbase's public per-second limit. */
+async function slot() {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + SPACING_MS;
+  if (at > now) await new Promise((r) => setTimeout(r, at - now));
+}
 
 /** Hour-start (unix s) → USD at that moment (the hour's open). */
 export type HourPrices = Map<number, number>;
@@ -64,6 +76,7 @@ async function fetchPage(
     start
   )}&end=${iso(end)}`;
   for (let attempt = 0; ; attempt++) {
+    await slot();
     const res = await fetch(url, {
       headers: {
         "User-Agent": "livepeer-explorer",
@@ -74,8 +87,8 @@ async function fetchPage(
       cache: "no-store",
     });
     // The public rate limit is per second: back off briefly and retry.
-    if (res.status === 429 && attempt < 4) {
-      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    if ((res.status === 429 || res.status >= 500) && attempt < RETRIES) {
+      await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       continue;
     }
     const json = await res.json().catch(() => null);
@@ -118,11 +131,25 @@ export async function pricesAt(
   const wanted = [...pages].filter((p) => p <= now).sort((a, b) => a - b);
 
   const prices: HourPrices = new Map();
+  const errors: unknown[] = [];
   for (let i = 0; i < wanted.length; i += CONCURRENCY) {
     const chunk = await Promise.all(
-      wanted.slice(i, i + CONCURRENCY).map((p) => readPage(coin, p))
+      wanted.slice(i, i + CONCURRENCY).map((p) =>
+        // A page that still fails leaves its moments unpriced rather than
+        // failing the rest; failures aren't cached, so they retry next time.
+        readPage(coin, p).catch((e) => {
+          errors.push(e);
+          return [] as [number, number][];
+        })
+      )
     );
     for (const pairs of chunk) for (const [h, usd] of pairs) prices.set(h, usd);
   }
+  if (errors.length === wanted.length) throw errors[0];
+  if (errors.length)
+    console.warn(
+      `Price history: ${errors.length} ${coin} pages failed`,
+      errors[0]
+    );
   return times.map((t) => priceAt(prices, t));
 }
