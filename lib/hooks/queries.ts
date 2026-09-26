@@ -1,6 +1,10 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 
 import {
   fetchGateway,
@@ -9,6 +13,7 @@ import {
 } from "@/lib/subgraph/gateways";
 import {
   fetchAccountEvents,
+  fetchAddressEvents,
   fetchDays,
   fetchEvents,
   fetchGatewayEvents,
@@ -18,6 +23,7 @@ import {
   fetchOrchestratorUpdates,
   fetchProtocol,
   fetchRewardProgress,
+  fetchTransactionEvents,
 } from "@/lib/subgraph/network";
 import { fetchPortfolio } from "@/lib/subgraph/portfolio";
 import {
@@ -134,6 +140,28 @@ export function useRewardProgress(round: number | undefined) {
     enabled: round != null,
     staleTime: 10_000,
     refetchInterval: 30_000,
+  });
+}
+
+/** Everything involving an address, newest first, a page at a time. */
+export function useAddressEvents(address: string | null) {
+  return useInfiniteQuery({
+    queryKey: ["address-events", address?.toLowerCase()],
+    queryFn: ({ pageParam }) =>
+      fetchAddressEvents(address!, { before: pageParam ?? undefined }),
+    initialPageParam: null as number | null,
+    getNextPageParam: (last) => last.next,
+    enabled: Boolean(address),
+    staleTime: MINUTE,
+  });
+}
+
+export function useTransactionEvents(hash: string | null) {
+  return useQuery({
+    queryKey: ["transaction-events", hash?.toLowerCase()],
+    queryFn: () => fetchTransactionEvents(hash!),
+    enabled: Boolean(hash),
+    staleTime: 5 * MINUTE,
   });
 }
 

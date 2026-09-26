@@ -915,6 +915,49 @@ const resolvers = {
     };
   },
 
+  // Everything involving an address, per event collection, like the
+  // subgraph's `or` filters across each role.
+  AddressEvents: ({ id, first = 50, before = 2 ** 31 - 1 }) => {
+    const who = String(id).toLowerCase();
+    const roles = [
+      "delegator",
+      "delegate",
+      "newDelegate",
+      "oldDelegate",
+      "gateway",
+    ];
+    const all = [
+      ...live,
+      ...f.transactions.flatMap((t) => t.events),
+      ...gatewayTickets,
+      ...gateways.flatMap((g) => g.funding),
+    ].filter(
+      (e) =>
+        e.timestamp <= before &&
+        roles.some((r) => String(e[r] ?? "").toLowerCase() === who)
+    );
+    const out = {};
+    for (const e of all.sort((a, b) => b.timestamp - a.timestamp)) {
+      const key = e.__typename[0].toLowerCase() + e.__typename.slice(1) + "s";
+      const rows = (out[key] ??= []);
+      if (rows.length < first) rows.push(shapeEvent(e));
+    }
+    return out;
+  },
+
+  TransactionEvents: ({ id }) => {
+    const hash = String(id).toLowerCase();
+    const events = [
+      ...live,
+      ...f.transactions.flatMap((t) => t.events),
+      ...gatewayTickets,
+      ...gateways.flatMap((g) => g.funding),
+    ].filter((e) => String(e.tx).toLowerCase() === hash);
+    return {
+      transaction: events.length ? { events: events.map(shapeEvent) } : null,
+    };
+  },
+
   Events: ({ first = 100 }) => ({
     transactions: [
       ...live.map((e) => ({ timestamp: e.timestamp, events: [e] })),

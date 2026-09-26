@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, Globe } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Globe } from "lucide-react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -330,6 +330,12 @@ export default function OrchestratorPage() {
                   })}
                 </span>
               )}
+              <Link
+                href={`/activity?q=${address}`}
+                className="inline-flex items-center gap-1 hover:text-foreground"
+              >
+                All activity <ArrowRight className="size-3" />
+              </Link>
             </div>
           </div>
         </div>

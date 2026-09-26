@@ -1,5 +1,7 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useMemo } from "react";
 
 import { ActivityList } from "@/components/activity-list";
@@ -494,7 +496,19 @@ export function PortfolioView({
           </section>
 
           <section>
-            <SectionHeader title="Recent activity" />
+            <SectionHeader
+              title="Recent activity"
+              action={
+                scoped.length === 1 ? (
+                  <Link
+                    href={`/activity?q=${scoped[0]}`}
+                    className="inline-flex items-center gap-1 text-ui-caption text-muted-foreground hover:text-foreground"
+                  >
+                    All activity <ArrowRight className="size-3" />
+                  </Link>
+                ) : undefined
+              }
+            />
             <ActivityList
               events={events}
               loading={eventsLoading}
