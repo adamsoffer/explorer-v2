@@ -391,7 +391,7 @@ function RewardCalls({ round }: { round: number }) {
 function LatestActivity() {
   const { data, isLoading, error, dataUpdatedAt } = useEvents(200);
   const latest = useMemo(() => data?.slice(0, 8), [data]);
-  // The feed sits mid-page, so never hold arrivals back for scrolling.
+  // The feed sits below the fold, so never hold arrivals back for scrolling.
   const { shown, fresh } = useLiveFeed(latest, { holdBelow: Infinity });
   return (
     <Section>
@@ -447,9 +447,9 @@ export default function NetworkPage() {
         </Section>
       )}
 
-      <LatestActivity />
-
       <HistorySection />
+
+      <LatestActivity />
     </Page>
   );
 }
